@@ -19,7 +19,7 @@ model User {
   name                String?
   password            String?   // Хэшированный пароль
   image               String?
-  role                Role      @default(LOGISTICS_MANAGER)
+  role                String    @default("LOGISTICS_MANAGER")
 
   // Верификация
   emailVerified       DateTime?
@@ -83,13 +83,12 @@ model VerificationToken {
 // РОЛИ ПОЛЬЗОВАТЕЛЕЙ
 // ============================================
 
-enum Role {
-  ADMIN               // Администратор - полный доступ
-  LOGISTICS_MANAGER   // Менеджер по логистике - работа с заявками
-  COMMERCIAL_MANAGER  // Коммерческий менеджер - продажи
-  ACCOUNTANT          // Бухгалтер - финансы и отчёты
-  LAWYER              // Юрист - документы и правовые вопросы
-}
+// Роли хранятся как String в базе данных:
+// ADMIN - Администратор (полный доступ)
+// LOGISTICS_MANAGER - Менеджер по логистике (работа с заявками)
+// COMMERCIAL_MANAGER - Коммерческий менеджер (продажи)
+// ACCOUNTANT - Бухгалтер (финансы и отчёты)
+// LAWYER - Юрист (документы и правовые вопросы)
 
 // ============================================
 // ЗАЯВКИ НА ПЕРЕВОЗКУ
@@ -115,7 +114,7 @@ model Order {
   cargoWeight           Float         // Вес в тоннах
 
   // Статус
-  status                OrderStatus   @default(NEW)
+  status                String    @default("NEW")
 
   // Водитель и транспорт
   driverId              String?
@@ -134,12 +133,11 @@ model Order {
   updatedAt             DateTime      @updatedAt
 }
 
-enum OrderStatus {
-  NEW         // Новая
-  IN_PROGRESS // В пути
-  DELIVERED   // Доставлена
-  CANCELLED   // Отменена
-}
+// Статусы заявок хранятся как String:
+// NEW - Новая
+// IN_PROGRESS - В пути
+// DELIVERED - Доставлена
+// CANCELLED - Отменена
 
 // ============================================
 // СПРАВОЧНИКИ
