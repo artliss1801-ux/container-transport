@@ -18,6 +18,7 @@ import {
 import { signOut, useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { roleLabels } from "@/lib/permissions";
 
 const navigation = [
   { name: "Главная", href: "/dashboard", icon: LayoutDashboard },
@@ -179,7 +180,7 @@ export function Sidebar() {
               {session?.user?.name || "Пользователь"}
             </p>
             <p className="text-xs text-gray-500 truncate">
-              {session?.user?.email}
+              {roleLabels[session?.user?.role || ""] || session?.user?.role}
             </p>
           </div>
         </div>
