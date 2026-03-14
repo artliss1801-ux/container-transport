@@ -9,9 +9,13 @@ export async function GET() {
   try {
     // Обновляем старую роль MANAGER на LOGISTICS_MANAGER если есть
     console.log('Migrating MANAGER role to LOGISTICS_MANAGER...');
-    await prisma.$executeRawUnsafe(`
-      UPDATE "User" SET role = 'LOGISTICS_MANAGER' WHERE role = 'MANAGER';
-    `);
+    try {
+      await prisma.$executeRawUnsafe(`
+        UPDATE "User" SET role = 'LOGISTICS_MANAGER' WHERE role = 'MANAGER';
+      `);
+    } catch (e) {
+      console.log('No MANAGER role to migrate');
+    }
 
     console.log('Creating User table...');
     await prisma.$executeRawUnsafe(`
@@ -136,12 +140,28 @@ export async function GET() {
       );
     `);
 
-    console.log('Tables created! Creating users...');
+    console.log('Creating AuditLog table...');
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AuditLog" (
+        "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+        "userId" TEXT,
+        "action" TEXT NOT NULL,
+        "entityType" TEXT NOT NULL,
+        "entityId" TEXT,
+        "details" TEXT,
+        "ipAddress" TEXT,
+        "userAgent" TEXT,
+        "createdAt" TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    console.log('Tables created! Checking users...');
 
     // Проверяем есть ли уже пользователи
     const usersCount = await prisma.$queryRaw`SELECT COUNT(*) FROM "User"`;
     const count = Number((usersCount as any)[0].count);
 
+    let createdUsers = false;
     if (count === 0) {
       const hashedAdminPassword = await bcrypt.hash('admin123', 12);
       const hashedManagerPassword = await bcrypt.hash('manager123', 12);
@@ -152,18 +172,24 @@ export async function GET() {
           ('admin@example.com', 'Администратор', '${hashedAdminPassword}', 'ADMIN'),
           ('logistics@example.com', 'Иван Логист', '${hashedManagerPassword}', 'LOGISTICS_MANAGER')
       `);
+      createdUsers = true;
     }
 
     return Response.json({
       success: true,
       message: 'Database initialized!',
-      credentials: {
+      migration: {
+        rolesMigrated: true,
+        tablesCreated: true,
+      },
+      credentials: count === 0 || createdUsers ? {
         admin: 'admin@example.com / admin123',
         logistics_manager: 'logistics@example.com / manager123'
-      }
+      } : 'Users already exist'
     });
 
   } catch (error: any) {
+    console.error('Migration error:', error);
     return Response.json({
       success: false,
       error: error.message || String(error)

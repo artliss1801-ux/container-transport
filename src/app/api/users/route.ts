@@ -4,6 +4,17 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+// Допустимые роли
+const VALID_ROLES = [
+  "ADMIN",
+  "LOGISTICS_MANAGER",
+  "COMMERCIAL_MANAGER",
+  "ACCOUNTANT",
+  "LAWYER",
+] as const;
+
+type Role = (typeof VALID_ROLES)[number];
+
 // GET - получить список пользователей (только для админа)
 export async function GET(request: NextRequest) {
   try {
@@ -68,7 +79,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Get users error:", error);
     return NextResponse.json(
-      { error: "Ошибка получения пользователей" },
+      { error: "Ошибка получения пользователей", details: String(error) },
       { status: 500 }
     );
   }
@@ -86,9 +97,18 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, name, password, role } = body;
 
+    // Валидация
     if (!email || !password || !role) {
       return NextResponse.json(
         { error: "Email, пароль и роль обязательны" },
+        { status: 400 }
+      );
+    }
+
+    // Проверка валидности роли
+    if (!VALID_ROLES.includes(role as Role)) {
+      return NextResponse.json(
+        { error: `Недопустимая роль: ${role}. Допустимые роли: ${VALID_ROLES.join(", ")}` },
         { status: 400 }
       );
     }
@@ -109,27 +129,44 @@ export async function POST(request: NextRequest) {
     const hashedPassword = await bcrypt.hash(password, 12);
 
     // Создаем пользователя
-    const user = await db.user.create({
-      data: {
-        email,
-        name: name || null,
-        password: hashedPassword,
-        role,
-      },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        createdAt: true,
-      },
-    });
+    try {
+      const user = await db.user.create({
+        data: {
+          email,
+          name: name || null,
+          password: hashedPassword,
+          role: role as Role,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          createdAt: true,
+        },
+      });
 
-    return NextResponse.json(user, { status: 201 });
-  } catch (error) {
+      return NextResponse.json(user, { status: 201 });
+    } catch (createError: any) {
+      console.error("Prisma create error:", createError);
+      
+      // Если ошибка связана с enum
+      if (createError.code === "P2009" || createError.message?.includes("enum")) {
+        return NextResponse.json(
+          { 
+            error: "Ошибка базы данных: роль не найдена в схеме. Выполните /api/migrate для обновления.",
+            details: createError.message 
+          },
+          { status: 500 }
+        );
+      }
+      
+      throw createError;
+    }
+  } catch (error: any) {
     console.error("Create user error:", error);
     return NextResponse.json(
-      { error: "Ошибка создания пользователя" },
+      { error: "Ошибка создания пользователя", details: error.message || String(error) },
       { status: 500 }
     );
   }

@@ -4,6 +4,17 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+// Допустимые роли
+const VALID_ROLES = [
+  "ADMIN",
+  "LOGISTICS_MANAGER",
+  "COMMERCIAL_MANAGER",
+  "ACCOUNTANT",
+  "LAWYER",
+] as const;
+
+type Role = (typeof VALID_ROLES)[number];
+
 // GET - получить пользователя по ID (только для админа)
 export async function GET(
   request: NextRequest,
@@ -68,6 +79,14 @@ export async function PUT(
     const body = await request.json();
     const { email, name, password, role } = body;
 
+    // Если передана роль, проверяем её валидность
+    if (role && !VALID_ROLES.includes(role as Role)) {
+      return NextResponse.json(
+        { error: `Недопустимая роль: ${role}. Допустимые роли: ${VALID_ROLES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
     // Проверяем существование пользователя
     const existingUser = await db.user.findUnique({
       where: { id },
@@ -103,23 +122,40 @@ export async function PUT(
     }
 
     // Обновляем пользователя
-    const user = await db.user.update({
-      where: { id },
-      data: updateData,
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        updatedAt: true,
-      },
-    });
+    try {
+      const user = await db.user.update({
+        where: { id },
+        data: updateData,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          updatedAt: true,
+        },
+      });
 
-    return NextResponse.json(user);
-  } catch (error) {
+      return NextResponse.json(user);
+    } catch (updateError: any) {
+      console.error("Prisma update error:", updateError);
+      
+      // Если ошибка связана с enum
+      if (updateError.code === "P2009" || updateError.message?.includes("enum")) {
+        return NextResponse.json(
+          { 
+            error: "Ошибка базы данных: роль не найдена в схеме. Выполните /api/migrate для обновления.",
+            details: updateError.message 
+          },
+          { status: 500 }
+        );
+      }
+      
+      throw updateError;
+    }
+  } catch (error: any) {
     console.error("Update user error:", error);
     return NextResponse.json(
-      { error: "Ошибка обновления пользователя" },
+      { error: "Ошибка обновления пользователя", details: error.message || String(error) },
       { status: 500 }
     );
   }
