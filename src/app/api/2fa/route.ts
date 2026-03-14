@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authenticator } from "otplib";
+import { TOTP } from "otplib";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
@@ -22,12 +22,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
     }
 
+    const totp = new TOTP();
+
     // Generate new secret
-    const secret = authenticator.generateSecret();
-    
+    const secret = totp.generateSecret();
+
     // Create OTP auth URL
     const serviceName = "ContainerTransport";
-    const otpauth = authenticator.keyuri(user.email, serviceName, secret);
+    const otpauth = totp.keyuri(user.email || "", serviceName, secret);
 
     // Generate QR code as data URL
     const qrCodeUrl = await QRCode.toDataURL(otpauth);
@@ -66,6 +68,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Пользователь не найден" }, { status: 404 });
     }
 
+    const totp = new TOTP();
+
     if (action === "enable") {
       // Verify the code before enabling
       if (!secret || !code) {
@@ -75,7 +79,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const isValid = authenticator.check(code, secret);
+      const isValid = totp.check(code, secret);
 
       if (!isValid) {
         return NextResponse.json(
@@ -112,7 +116,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const isValid = authenticator.check(code, user.twoFactorSecret);
+      const isValid = totp.check(code, user.twoFactorSecret);
 
       if (!isValid) {
         return NextResponse.json(

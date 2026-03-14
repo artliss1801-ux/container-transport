@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { authenticator } from "otplib";
+import { TOTP } from "otplib";
 
 declare module "next-auth" {
   interface User {
@@ -87,7 +87,8 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Verify 2FA code
-          const isValid = authenticator.check(
+          const totp = new TOTP();
+          const isValid = totp.check(
             credentials.twoFactorCode,
             user.twoFactorSecret
           );
