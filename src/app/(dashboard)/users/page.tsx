@@ -42,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Edit, Trash2, Users } from "lucide-react";
+import { roleLabels, roleColors } from "@/lib/permissions";
 
 interface User {
   id: string;
@@ -56,15 +57,14 @@ interface User {
   };
 }
 
-const roleLabels: Record<string, string> = {
-  ADMIN: "Администратор",
-  MANAGER: "Менеджер",
-};
-
-const roleVariants: Record<string, "default" | "secondary"> = {
-  ADMIN: "default",
-  MANAGER: "secondary",
-};
+// Доступные роли для выбора
+const availableRoles = [
+  { value: "ADMIN", label: "Администратор" },
+  { value: "LOGISTICS_MANAGER", label: "Менеджер по логистике" },
+  { value: "COMMERCIAL_MANAGER", label: "Коммерческий менеджер" },
+  { value: "ACCOUNTANT", label: "Бухгалтер" },
+  { value: "LAWYER", label: "Юрист" },
+];
 
 export default function UsersPage() {
   const { data: session, status } = useSession();
@@ -86,7 +86,7 @@ export default function UsersPage() {
     email: "",
     name: "",
     password: "",
-    role: "MANAGER",
+    role: "LOGISTICS_MANAGER",
   });
 
   // Redirect non-admins
@@ -282,8 +282,11 @@ export default function UsersPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Все роли</SelectItem>
-                  <SelectItem value="ADMIN">Администратор</SelectItem>
-                  <SelectItem value="MANAGER">Менеджер</SelectItem>
+                  {availableRoles.map((role) => (
+                    <SelectItem key={role.value} value={role.value}>
+                      {role.label}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -328,7 +331,7 @@ export default function UsersPage() {
                         </TableCell>
                         <TableCell>{user.name || "-"}</TableCell>
                         <TableCell>
-                          <Badge variant={roleVariants[user.role] || "default"}>
+                          <Badge className={roleColors[user.role] || "bg-gray-100 text-gray-800"}>
                             {roleLabels[user.role] || user.role}
                           </Badge>
                         </TableCell>
@@ -456,8 +459,11 @@ export default function UsersPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ADMIN">Администратор</SelectItem>
-                      <SelectItem value="MANAGER">Менеджер</SelectItem>
+                      {availableRoles.map((role) => (
+                        <SelectItem key={role.value} value={role.value}>
+                          {role.label}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
