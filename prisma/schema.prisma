@@ -1,11 +1,11 @@
-// Prisma Schema для системы учета контейнерных автоперевозок
+// Prisma Schema для системы учета контейнерных автоперевозок (PostgreSQL для Vercel)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -20,26 +20,26 @@ model User {
   password            String?   // Хэшированный пароль
   image               String?
   role                Role      @default(MANAGER)
-  
+
   // Верификация
   emailVerified       DateTime?
   verificationToken   String?   @unique
-  
+
   // Двухфакторная аутентификация
   isTwoFactorEnabled  Boolean   @default(false)
   twoFactorSecret     String?
-  
+
   // Восстановление пароля
   resetToken          String?   @unique
   resetTokenExpiry    DateTime?
-  
+
   // Сессии и аккаунты (для NextAuth)
   accounts            Account[]
   sessions            Session[]
-  
+
   // Связи
   orders              Order[]
-  
+
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 }
@@ -50,13 +50,13 @@ model Account {
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
+  refresh_token     String?  @db.Text
+  access_token      String?  @db.Text
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String?
-  session_state     String?
+  id_token          String?  @db.Text
+  session_state     String?  @db.Text
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -95,38 +95,38 @@ enum Role {
 model Order {
   id                    String        @id @default(cuid())
   orderNumber           String        @unique  // Автоматически генерируемый номер
-  
+
   // Место загрузки
   loadingDatetime       DateTime
   loadingCity           String
   loadingAddress        String
-  
+
   // Место выгрузки
   unloadingCity         String
   unloadingAddress      String
-  
+
   // Информация о контейнере и грузе
   containerNumber       String
   containerTypeId       String
   containerType         ContainerType @relation(fields: [containerTypeId], references: [id])
   cargoWeight           Float         // Вес в тоннах
-  
+
   // Статус
   status                OrderStatus   @default(NEW)
-  
+
   // Водитель и транспорт
   driverId              String?
   driver                Driver?       @relation(fields: [driverId], references: [id])
   vehicleId             String?
   vehicle               Vehicle?      @relation(fields: [vehicleId], references: [id])
-  
+
   // Создатель заявки
   userId                String
   user                  User          @relation(fields: [userId], references: [id])
-  
+
   // Примечания
-  notes                 String?
-  
+  notes                 String?       @db.Text
+
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
 }
@@ -146,14 +146,14 @@ enum OrderStatus {
 model Driver {
   id              String    @id @default(cuid())
   fullName        String    // ФИО
-  phone           String?   // Телефон
-  licenseNumber   String?   // Номер водительского удостоверения
-  passportData    String?   // Паспортные данные
+  phone           String?
+  licenseNumber   String?
+  passportData    String?   @db.Text
   isActive        Boolean   @default(true)
-  
+
   // Связи
   orders          Order[]
-  
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -162,14 +162,14 @@ model Driver {
 model Vehicle {
   id              String      @id @default(cuid())
   vehicleNumber   String      // Госномер автомобиля
-  trailerNumber   String?     // Госномер прицепа
-  brand           String?     // Марка
-  vehicleType     String?     // Тип (тягач, фура и т.д.)
+  trailerNumber   String?
+  brand           String?
+  vehicleType     String?
   isActive        Boolean     @default(true)
-  
+
   // Связи
   orders          Order[]
-  
+
   createdAt       DateTime    @default(now())
   updatedAt       DateTime    @updatedAt
 }
@@ -178,13 +178,13 @@ model Vehicle {
 model ContainerType {
   id              String    @id @default(cuid())
   name            String    // Название (20 футов, 40 футов, рефрижератор)
-  code            String?   // Код (20DC, 40HC, 20RF)
-  description     String?   // Описание
+  code            String?
+  description     String?   @db.Text
   isActive        Boolean   @default(true)
-  
+
   // Связи
   orders          Order[]
-  
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -196,11 +196,11 @@ model ContainerType {
 model AuditLog {
   id          String      @id @default(cuid())
   userId      String?
-  action      String      // CREATE, UPDATE, DELETE, LOGIN, etc.
-  entityType  String      // Order, Driver, Vehicle, etc.
+  action      String
+  entityType  String
   entityId    String?
-  details     String?     // JSON с деталями действия
+  details     String?     @db.Text
   ipAddress   String?
-  userAgent   String?
+  userAgent   String?     @db.Text
   createdAt   DateTime    @default(now())
 }
