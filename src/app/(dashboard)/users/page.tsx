@@ -193,7 +193,7 @@ export default function UsersPage() {
       email: "",
       name: "",
       password: "",
-      role: "MANAGER",
+      role: "LOGISTICS_MANAGER",
     });
     setEditingUser(null);
   };
