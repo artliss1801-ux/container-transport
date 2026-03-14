@@ -22,6 +22,7 @@ export async function GET(
 ) {
   try {
     const session = await getServerSession(authOptions);
+    console.log("GET user - session:", session?.user?.email, session?.user?.role);
 
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
@@ -54,10 +55,10 @@ export async function GET(
     }
 
     return NextResponse.json(user);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Get user error:", error);
     return NextResponse.json(
-      { error: "Ошибка получения пользователя" },
+      { error: "Ошибка получения пользователя", details: error.message },
       { status: 500 }
     );
   }
@@ -70,6 +71,7 @@ export async function PUT(
 ) {
   try {
     const session = await getServerSession(authOptions);
+    console.log("PUT user - session:", session?.user?.email, session?.user?.role);
 
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
@@ -77,6 +79,8 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
+    console.log("PUT user - id:", id, "body:", body);
+
     const { email, name, password, role } = body;
 
     // Если передана роль, проверяем её валидность
@@ -91,6 +95,8 @@ export async function PUT(
     const existingUser = await db.user.findUnique({
       where: { id },
     });
+
+    console.log("PUT user - existingUser:", existingUser?.email, existingUser?.role);
 
     if (!existingUser) {
       return NextResponse.json(
@@ -121,41 +127,27 @@ export async function PUT(
       updateData.password = await bcrypt.hash(password, 12);
     }
 
-    // Обновляем пользователя
-    try {
-      const user = await db.user.update({
-        where: { id },
-        data: updateData,
-        select: {
-          id: true,
-          email: true,
-          name: true,
-          role: true,
-          updatedAt: true,
-        },
-      });
+    console.log("PUT user - updateData:", updateData);
 
-      return NextResponse.json(user);
-    } catch (updateError: any) {
-      console.error("Prisma update error:", updateError);
-      
-      // Если ошибка связана с enum
-      if (updateError.code === "P2009" || updateError.message?.includes("enum")) {
-        return NextResponse.json(
-          { 
-            error: "Ошибка базы данных: роль не найдена в схеме. Выполните /api/migrate для обновления.",
-            details: updateError.message 
-          },
-          { status: 500 }
-        );
-      }
-      
-      throw updateError;
-    }
+    // Обновляем пользователя
+    const user = await db.user.update({
+      where: { id },
+      data: updateData,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        updatedAt: true,
+      },
+    });
+
+    console.log("PUT user - result:", user);
+    return NextResponse.json(user);
   } catch (error: any) {
     console.error("Update user error:", error);
     return NextResponse.json(
-      { error: "Ошибка обновления пользователя", details: error.message || String(error) },
+      { error: "Ошибка обновления пользователя", details: error.message, code: error.code },
       { status: 500 }
     );
   }
@@ -201,10 +193,10 @@ export async function DELETE(
     });
 
     return NextResponse.json({ message: "Пользователь удален" });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Delete user error:", error);
     return NextResponse.json(
-      { error: "Ошибка удаления пользователя" },
+      { error: "Ошибка удаления пользователя", details: error.message },
       { status: 500 }
     );
   }
