@@ -1,5 +1,9 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient | undefined };
 const prisma = globalForPrisma.prisma ?? new PrismaClient();
@@ -11,6 +15,20 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 export async function GET() {
   try {
     console.log('Starting database initialization...');
+
+    // Сначала создаём таблицы через prisma db push
+    console.log('Running prisma db push...');
+    try {
+      const { stdout, stderr } = await execAsync('npx prisma db push --accept-data-loss --skip-generate', {
+        timeout: 60000,
+        env: process.env
+      });
+      console.log('Prisma db push stdout:', stdout);
+      if (stderr) console.log('Prisma db push stderr:', stderr);
+    } catch (pushError) {
+      console.log('Prisma db push warning:', pushError);
+      // Продолжаем даже если есть предупреждения
+    }
 
     // Создаем администратора если не существует
     const existingAdmin = await prisma.user.findUnique({
