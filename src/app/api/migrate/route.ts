@@ -17,7 +17,7 @@ export async function GET() {
       console.log('No MANAGER role to migrate');
     }
 
-    console.log('Creating User table...');
+    // Создаём таблицы если не существуют
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "User" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,7 +37,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating Account table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Account" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -56,7 +55,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating Session table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Session" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -66,7 +64,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating VerificationToken table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "VerificationToken" (
         "identifier" TEXT NOT NULL,
@@ -76,7 +73,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating ContainerType table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ContainerType" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -89,7 +85,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating Driver table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Driver" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -103,7 +98,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating Vehicle table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Vehicle" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -117,7 +111,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating Order table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Order" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -140,7 +133,6 @@ export async function GET() {
       );
     `);
 
-    console.log('Creating AuditLog table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "AuditLog" (
         "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -155,37 +147,15 @@ export async function GET() {
       );
     `);
 
-    console.log('Tables created! Checking users...');
-
-    // Проверяем есть ли уже пользователи
-    const usersCount = await prisma.$queryRaw`SELECT COUNT(*) FROM "User"`;
-    const count = Number((usersCount as any)[0].count);
-
-    let createdUsers = false;
-    if (count === 0) {
-      const hashedAdminPassword = await bcrypt.hash('admin123', 12);
-      const hashedManagerPassword = await bcrypt.hash('manager123', 12);
-
-      await prisma.$executeRawUnsafe(`
-        INSERT INTO "User" (email, name, password, role)
-        VALUES 
-          ('admin@example.com', 'Администратор', '${hashedAdminPassword}', 'ADMIN'),
-          ('logistics@example.com', 'Иван Логист', '${hashedManagerPassword}', 'LOGISTICS_MANAGER')
-      `);
-      createdUsers = true;
-    }
+    // Получаем ВСЕХ пользователей для диагностики
+    const allUsers = await prisma.$queryRaw`
+      SELECT id, email, name, role, "createdAt" FROM "User" ORDER BY "createdAt" DESC
+    `;
 
     return Response.json({
       success: true,
       message: 'Database initialized!',
-      migration: {
-        rolesMigrated: true,
-        tablesCreated: true,
-      },
-      credentials: count === 0 || createdUsers ? {
-        admin: 'admin@example.com / admin123',
-        logistics_manager: 'logistics@example.com / manager123'
-      } : 'Users already exist'
+      allUsers: allUsers,
     });
 
   } catch (error: any) {
