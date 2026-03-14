@@ -4,6 +4,7 @@ import { Bell, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useSession } from "next-auth/react";
+import { roleLabels } from "@/lib/permissions";
 
 interface HeaderProps {
   title: string;
@@ -13,7 +14,7 @@ interface HeaderProps {
 export function Header({ title, onMenuClick }: HeaderProps) {
   const { data: session } = useSession();
 
-  const roleLabel = session?.user?.role === "ADMIN" ? "Администратор" : "Менеджер";
+  const roleLabel = roleLabels[session?.user?.role || ""] || session?.user?.role || "Пользователь";
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
