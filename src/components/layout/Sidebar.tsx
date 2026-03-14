@@ -25,6 +25,10 @@ const navigation = [
   { name: "Отчеты", href: "/reports", icon: BarChart3 },
 ];
 
+const adminNavigation = [
+  { name: "Пользователи", href: "/users", icon: Users },
+];
+
 const directoryNavigation = [
   { name: "Водители", href: "/directories/drivers", icon: Users },
   { name: "Транспорт", href: "/directories/vehicles", icon: Truck },
@@ -76,6 +80,39 @@ export function Sidebar() {
             );
           })}
         </ul>
+
+        {/* Admin section - Admin only */}
+        {isAdmin && (
+          <>
+            <Separator className="my-4" />
+            <div className="px-3 mb-2">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                Администрирование
+              </span>
+            </div>
+            <ul className="space-y-1">
+              {adminNavigation.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <li key={item.name}>
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-primary/10 text-primary"
+                          : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                      )}
+                    >
+                      <item.icon className="w-5 h-5" />
+                      {item.name}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
 
         {/* Directories section - Admin only */}
         {isAdmin && (

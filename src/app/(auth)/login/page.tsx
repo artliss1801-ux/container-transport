@@ -157,22 +157,14 @@ export default function LoginPage() {
             {loading ? "Вход..." : show2FA ? "Подтвердить" : "Войти"}
           </Button>
           {!show2FA && (
-            <>
-              <div className="text-sm text-center text-muted-foreground">
-                Нет аккаунта?{" "}
-                <Link href="/register" className="text-primary hover:underline">
-                  Зарегистрироваться
-                </Link>
-              </div>
-              <div className="text-sm text-center">
-                <Link
-                  href="/forgot-password"
-                  className="text-muted-foreground hover:text-primary"
-                >
-                  Забыли пароль?
-                </Link>
-              </div>
-            </>
+            <div className="text-sm text-center">
+              <Link
+                href="/forgot-password"
+                className="text-muted-foreground hover:text-primary"
+              >
+                Забыли пароль?
+              </Link>
+            </div>
           )}
         </CardFooter>
       </form>
