@@ -7,6 +7,12 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
 
 export async function GET() {
   try {
+    // Обновляем старую роль MANAGER на LOGISTICS_MANAGER если есть
+    console.log('Migrating MANAGER role to LOGISTICS_MANAGER...');
+    await prisma.$executeRawUnsafe(`
+      UPDATE "User" SET role = 'LOGISTICS_MANAGER' WHERE role = 'MANAGER';
+    `);
+
     console.log('Creating User table...');
     await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "User" (
@@ -15,7 +21,7 @@ export async function GET() {
         "name" TEXT,
         "password" TEXT,
         "image" TEXT,
-        "role" TEXT NOT NULL DEFAULT 'MANAGER',
+        "role" TEXT NOT NULL DEFAULT 'LOGISTICS_MANAGER',
         "emailVerified" TIMESTAMP,
         "verificationToken" TEXT UNIQUE,
         "isTwoFactorEnabled" BOOLEAN DEFAULT false,
@@ -144,7 +150,7 @@ export async function GET() {
         INSERT INTO "User" (email, name, password, role)
         VALUES 
           ('admin@example.com', 'Администратор', '${hashedAdminPassword}', 'ADMIN'),
-          ('manager@example.com', 'Иван Менеджер', '${hashedManagerPassword}', 'MANAGER')
+          ('logistics@example.com', 'Иван Логист', '${hashedManagerPassword}', 'LOGISTICS_MANAGER')
       `);
     }
 
@@ -153,7 +159,7 @@ export async function GET() {
       message: 'Database initialized!',
       credentials: {
         admin: 'admin@example.com / admin123',
-        manager: 'manager@example.com / manager123'
+        logistics_manager: 'logistics@example.com / manager123'
       }
     });
 

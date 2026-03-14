@@ -19,7 +19,7 @@ model User {
   name                String?
   password            String?   // Хэшированный пароль
   image               String?
-  role                Role      @default(MANAGER)
+  role                Role      @default(LOGISTICS_MANAGER)
 
   // Верификация
   emailVerified       DateTime?
