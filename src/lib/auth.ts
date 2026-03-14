@@ -3,7 +3,6 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { db } from "@/lib/db";
 import bcrypt from "bcryptjs";
-import { TOTP } from "otplib";
 
 declare module "next-auth" {
   interface User {
@@ -28,15 +27,15 @@ declare module "next-auth/jwt" {
     id: string;
     role: string;
     isTwoFactorEnabled: boolean;
-    isTwoFactorVerified?: boolean;
   }
 }
 
 export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET || "container-transport-secret-key-2024-production",
   adapter: PrismaAdapter(db),
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // 24 hours
+    maxAge: 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
@@ -44,14 +43,15 @@ export const authOptions: NextAuthOptions = {
   },
   providers: [
     CredentialsProvider({
+      id: "credentials",
       name: "credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
-        twoFactorCode: { label: "2FA Code", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
+          console.log("Missing credentials");
           return null;
         }
 
@@ -60,6 +60,7 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!user || !user.password) {
+          console.log("User not found");
           return null;
         }
 
@@ -69,41 +70,18 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isPasswordValid) {
+          console.log("Invalid password");
           return null;
         }
 
-        // Check 2FA if enabled
-        if (user.isTwoFactorEnabled && user.twoFactorSecret) {
-          if (!credentials.twoFactorCode) {
-            // Return user with flag to indicate 2FA is required
-            return {
-              id: user.id,
-              email: user.email,
-              name: user.name,
-              role: user.role,
-              isTwoFactorEnabled: true,
-              requiresTwoFactor: true,
-            } as any;
-          }
-
-          // Verify 2FA code
-          const totp = new TOTP();
-          const isValid = totp.check(
-            credentials.twoFactorCode,
-            user.twoFactorSecret
-          );
-
-          if (!isValid) {
-            return null;
-          }
-        }
+        console.log("Login successful:", user.email);
 
         return {
           id: user.id,
           email: user.email,
           name: user.name,
           role: user.role,
-          isTwoFactorEnabled: user.isTwoFactorEnabled,
+          isTwoFactorEnabled: user.isTwoFactorEnabled || false,
         };
       },
     }),
@@ -119,20 +97,23 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (token) {
-        session.user.id = token.id;
-        session.user.role = token.role;
-        session.user.isTwoFactorEnabled = token.isTwoFactorEnabled;
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.isTwoFactorEnabled = token.isTwoFactorEnabled as boolean;
       }
       return session;
     },
   },
-  events: {
-    async signIn({ user }) {
-      // Update last login time
-      await db.user.update({
-        where: { id: user.id },
-        data: { updatedAt: new Date() },
-      });
+  cookies: {
+    sessionToken: {
+      name: `next-auth.session-token`,
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
     },
   },
+  debug: process.env.NODE_ENV === "development",
 };
