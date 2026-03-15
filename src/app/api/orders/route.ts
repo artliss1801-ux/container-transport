@@ -6,9 +6,12 @@ import { z } from "zod";
 
 // Schema for creating/updating orders
 const orderSchema = z.object({
+  client: z.string().nullable().optional(),
+  port: z.string().nullable().optional(),
   loadingDatetime: z.string().transform((val) => new Date(val)),
   loadingCity: z.string().min(1, "Укажите город загрузки"),
   loadingAddress: z.string().min(1, "Укажите адрес загрузки"),
+  unloadingDatetime: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
   unloadingCity: z.string().min(1, "Укажите город выгрузки"),
   unloadingAddress: z.string().min(1, "Укажите адрес выгрузки"),
   containerNumber: z.string().min(1, "Укажите номер контейнера"),
@@ -17,6 +20,13 @@ const orderSchema = z.object({
   status: z.enum(["NEW", "IN_PROGRESS", "DELIVERED", "CANCELLED"]).optional(),
   driverId: z.string().nullable().optional(),
   vehicleId: z.string().nullable().optional(),
+  carrier: z.string().nullable().optional(),
+  clientRate: z.number().nullable().optional(),
+  carrierRate: z.number().nullable().optional(),
+  carrierPaymentDueDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  deliveryDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  emptyContainerReturnDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  documentSubmissionDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
   notes: z.string().nullable().optional(),
 });
 
@@ -27,7 +37,6 @@ async function generateOrderNumber(): Promise<string> {
   const year = date.getFullYear().toString().slice(-2);
   const month = (date.getMonth() + 1).toString().padStart(2, "0");
   
-  // Get count of orders this month
   const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1);
   const count = await db.order.count({
     where: {
@@ -60,10 +69,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const exportCsv = searchParams.get("export") === "csv";
 
-    // Build where clause
     const where: any = {};
 
-    // Admin sees all orders, Manager sees only their own
     if (session.user.role === "MANAGER") {
       where.userId = session.user.id;
     }
@@ -80,6 +87,7 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { orderNumber: { contains: search } },
         { containerNumber: { contains: search } },
+        { client: { contains: search } },
         { loadingCity: { contains: search } },
         { unloadingCity: { contains: search } },
       ];
@@ -95,10 +103,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get total count
     const total = await db.order.count({ where });
 
-    // Get orders
     const orders = await db.order.findMany({
       where,
       include: {
@@ -120,22 +126,27 @@ export async function GET(request: NextRequest) {
       take: exportCsv ? undefined : limit,
     });
 
-    // Export to CSV
     if (exportCsv) {
       const headers = [
-        "Номер заявки",
-        "Дата загрузки",
-        "Город загрузки",
-        "Адрес загрузки",
-        "Город выгрузки",
-        "Адрес выгрузки",
+        "Клиент",
+        "Порт",
         "Номер контейнера",
         "Тип контейнера",
-        "Вес груза (т)",
+        "Вес (кг)",
+        "Дата погрузки",
         "Статус",
-        "Водитель",
-        "Транспорт",
         "Примечания",
+        "Номер заявки",
+        "Маршрут",
+        "Дата доставки",
+        "Водитель",
+        "Телефон",
+        "Перевозчик",
+        "Ставка клиента",
+        "Ставка перевозчика",
+        "Срок оплаты",
+        "Дата сдачи порожнего",
+        "Дата сдачи документов",
       ];
 
       const statusMap: Record<string, string> = {
@@ -146,19 +157,25 @@ export async function GET(request: NextRequest) {
       };
 
       const rows = orders.map((order) => [
-        order.orderNumber,
-        order.loadingDatetime.toLocaleString("ru-RU"),
-        order.loadingCity,
-        order.loadingAddress,
-        order.unloadingCity,
-        order.unloadingAddress,
+        order.client || "",
+        order.port || "",
         order.containerNumber,
         order.containerType.name,
         order.cargoWeight.toString(),
+        order.loadingDatetime.toLocaleString("ru-RU"),
         statusMap[order.status] || order.status,
-        order.driver?.fullName || "",
-        order.vehicle ? `${order.vehicle.vehicleNumber}${order.vehicle.trailerNumber ? ` / ${order.vehicle.trailerNumber}` : ""}` : "",
         order.notes || "",
+        order.orderNumber,
+        `${order.loadingCity} → ${order.unloadingCity}`,
+        order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("ru-RU") : "",
+        order.driver?.fullName || "",
+        order.driver?.phone || "",
+        order.carrier || "",
+        order.clientRate?.toString() || "",
+        order.carrierRate?.toString() || "",
+        order.carrierPaymentDueDate ? new Date(order.carrierPaymentDueDate).toLocaleDateString("ru-RU") : "",
+        order.emptyContainerReturnDate ? new Date(order.emptyContainerReturnDate).toLocaleDateString("ru-RU") : "",
+        order.documentSubmissionDate ? new Date(order.documentSubmissionDate).toLocaleDateString("ru-RU") : "",
       ]);
 
       const csvContent = [
@@ -166,7 +183,6 @@ export async function GET(request: NextRequest) {
         ...rows.map((row) => row.map((cell) => `"${cell}"`).join(";")),
       ].join("\n");
 
-      // Add BOM for Excel to recognize UTF-8
       const bom = "\uFEFF";
       const csvBuffer = Buffer.from(bom + csvContent, "utf-8");
 
@@ -208,15 +224,17 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const data = orderSchema.parse(body);
 
-    // Generate order number
     const orderNumber = await generateOrderNumber();
 
     const order = await db.order.create({
       data: {
         orderNumber,
+        client: data.client,
+        port: data.port,
         loadingDatetime: data.loadingDatetime,
         loadingCity: data.loadingCity,
         loadingAddress: data.loadingAddress,
+        unloadingDatetime: data.unloadingDatetime,
         unloadingCity: data.unloadingCity,
         unloadingAddress: data.unloadingAddress,
         containerNumber: data.containerNumber,
@@ -225,6 +243,13 @@ export async function POST(request: NextRequest) {
         status: data.status || "NEW",
         driverId: data.driverId,
         vehicleId: data.vehicleId,
+        carrier: data.carrier,
+        clientRate: data.clientRate,
+        carrierRate: data.carrierRate,
+        carrierPaymentDueDate: data.carrierPaymentDueDate,
+        deliveryDate: data.deliveryDate,
+        emptyContainerReturnDate: data.emptyContainerReturnDate,
+        documentSubmissionDate: data.documentSubmissionDate,
         notes: data.notes,
         userId: session.user.id,
       },

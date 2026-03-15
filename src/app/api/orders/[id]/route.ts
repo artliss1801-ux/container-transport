@@ -5,9 +5,12 @@ import { authOptions } from "@/lib/auth";
 import { z } from "zod";
 
 const orderUpdateSchema = z.object({
+  client: z.string().nullable().optional(),
+  port: z.string().nullable().optional(),
   loadingDatetime: z.string().transform((val) => new Date(val)),
   loadingCity: z.string().min(1, "Укажите город загрузки"),
   loadingAddress: z.string().min(1, "Укажите адрес загрузки"),
+  unloadingDatetime: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
   unloadingCity: z.string().min(1, "Укажите город выгрузки"),
   unloadingAddress: z.string().min(1, "Укажите адрес выгрузки"),
   containerNumber: z.string().min(1, "Укажите номер контейнера"),
@@ -16,6 +19,13 @@ const orderUpdateSchema = z.object({
   status: z.enum(["NEW", "IN_PROGRESS", "DELIVERED", "CANCELLED"]),
   driverId: z.string().nullable().optional(),
   vehicleId: z.string().nullable().optional(),
+  carrier: z.string().nullable().optional(),
+  clientRate: z.number().nullable().optional(),
+  carrierRate: z.number().nullable().optional(),
+  carrierPaymentDueDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  deliveryDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  emptyContainerReturnDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  documentSubmissionDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
   notes: z.string().nullable().optional(),
 });
 
@@ -53,11 +63,6 @@ export async function GET(
       return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
     }
 
-    // Check access
-    if (session.user.role === "MANAGER" && order.userId !== session.user.id) {
-      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
-    }
-
     return NextResponse.json(order);
   } catch (error) {
     console.error("Get order error:", error);
@@ -84,7 +89,6 @@ export async function PUT(
     const body = await request.json();
     const data = orderUpdateSchema.parse(body);
 
-    // Check if order exists
     const existingOrder = await db.order.findUnique({
       where: { id },
     });
@@ -93,17 +97,15 @@ export async function PUT(
       return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
     }
 
-    // Check access
-    if (session.user.role === "MANAGER" && existingOrder.userId !== session.user.id) {
-      return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
-    }
-
     const order = await db.order.update({
       where: { id },
       data: {
+        client: data.client,
+        port: data.port,
         loadingDatetime: data.loadingDatetime,
         loadingCity: data.loadingCity,
         loadingAddress: data.loadingAddress,
+        unloadingDatetime: data.unloadingDatetime,
         unloadingCity: data.unloadingCity,
         unloadingAddress: data.unloadingAddress,
         containerNumber: data.containerNumber,
@@ -112,6 +114,13 @@ export async function PUT(
         status: data.status,
         driverId: data.driverId,
         vehicleId: data.vehicleId,
+        carrier: data.carrier,
+        clientRate: data.clientRate,
+        carrierRate: data.carrierRate,
+        carrierPaymentDueDate: data.carrierPaymentDueDate,
+        deliveryDate: data.deliveryDate,
+        emptyContainerReturnDate: data.emptyContainerReturnDate,
+        documentSubmissionDate: data.documentSubmissionDate,
         notes: data.notes,
       },
       include: {
@@ -152,7 +161,6 @@ export async function DELETE(
 
     const { id } = await params;
 
-    // Check if order exists
     const existingOrder = await db.order.findUnique({
       where: { id },
     });
@@ -161,7 +169,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Заявка не найдена" }, { status: 404 });
     }
 
-    // Check access - only Admin can delete
+    // Only Admin can delete
     if (session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Доступ запрещен" }, { status: 403 });
     }
