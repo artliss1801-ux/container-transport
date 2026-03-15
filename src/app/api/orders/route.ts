@@ -223,44 +223,55 @@ export async function GET(request: NextRequest) {
 // POST - Create new order
 export async function POST(request: NextRequest) {
   try {
+    console.log("POST /api/orders - Starting...");
+    
     const session = await getServerSession(authOptions);
+    console.log("Session:", session ? { id: session.user?.id, role: session.user?.role } : null);
 
     if (!session?.user?.id) {
+      console.log("ERROR: No session");
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
     const body = await request.json();
+    console.log("Request body:", JSON.stringify(body, null, 2));
+    
     const data = orderSchema.parse(body);
+    console.log("Parsed data:", JSON.stringify(data, null, 2));
 
     const orderNumber = await generateOrderNumber();
+    console.log("Generated orderNumber:", orderNumber);
+
+    const orderData = {
+      orderNumber,
+      client: data.client,
+      port: data.port,
+      loadingDatetime: data.loadingDatetime,
+      loadingCity: data.loadingCity,
+      loadingAddress: data.loadingAddress,
+      unloadingDatetime: data.unloadingDatetime,
+      unloadingCity: data.unloadingCity,
+      unloadingAddress: data.unloadingAddress,
+      containerNumber: data.containerNumber,
+      containerTypeId: data.containerTypeId,
+      cargoWeight: data.cargoWeight,
+      status: data.status || "NEW",
+      driverId: data.driverId,
+      vehicleId: data.vehicleId,
+      carrier: data.carrier,
+      clientRate: data.clientRate,
+      carrierRate: data.carrierRate,
+      carrierPaymentDueDate: data.carrierPaymentDueDate,
+      deliveryDate: data.deliveryDate,
+      emptyContainerReturnDate: data.emptyContainerReturnDate,
+      documentSubmissionDate: data.documentSubmissionDate,
+      notes: data.notes,
+      userId: session.user.id,
+    };
+    console.log("Order data to create:", JSON.stringify(orderData, null, 2));
 
     const order = await db.order.create({
-      data: {
-        orderNumber,
-        client: data.client,
-        port: data.port,
-        loadingDatetime: data.loadingDatetime,
-        loadingCity: data.loadingCity,
-        loadingAddress: data.loadingAddress,
-        unloadingDatetime: data.unloadingDatetime,
-        unloadingCity: data.unloadingCity,
-        unloadingAddress: data.unloadingAddress,
-        containerNumber: data.containerNumber,
-        containerTypeId: data.containerTypeId,
-        cargoWeight: data.cargoWeight,
-        status: data.status || "NEW",
-        driverId: data.driverId,
-        vehicleId: data.vehicleId,
-        carrier: data.carrier,
-        clientRate: data.clientRate,
-        carrierRate: data.carrierRate,
-        carrierPaymentDueDate: data.carrierPaymentDueDate,
-        deliveryDate: data.deliveryDate,
-        emptyContainerReturnDate: data.emptyContainerReturnDate,
-        documentSubmissionDate: data.documentSubmissionDate,
-        notes: data.notes,
-        userId: session.user.id,
-      },
+      data: orderData,
       include: {
         containerType: true,
         driver: true,
@@ -268,18 +279,23 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log("Order created successfully:", order.id);
     return NextResponse.json(order, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Create order error - Full error:", error);
+    console.error("Error message:", error?.message);
+    console.error("Error stack:", error?.stack);
+    
     if (error instanceof z.ZodError) {
+      console.error("Zod validation errors:", error.errors);
       return NextResponse.json(
-        { error: error.errors[0].message },
+        { error: error.errors[0].message, details: error.errors },
         { status: 400 }
       );
     }
 
-    console.error("Create order error:", error);
     return NextResponse.json(
-      { error: "Ошибка создания заявки" },
+      { error: "Ошибка создания заявки", detail: error?.message || String(error) },
       { status: 500 }
     );
   }
