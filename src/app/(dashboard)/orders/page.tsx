@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
@@ -43,31 +43,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
-
-// Список основных городов России и Беларуси
-const CITIES = [
-  // Россия
-  "Москва", "Московская область", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
-  "Казань", "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону",
-  "Уфа", "Красноярск", "Воронеж", "Пермь", "Волгоград", "Краснодар", "Саратов",
-  "Тюмень", "Тольятти", "Ижевск", "Барнаул", "Иркутск", "Ульяновск", "Хабаровск",
-  "Владивосток", "Ярославль", "Махачкала", "Томск", "Оренбург", "Кемерово",
-  "Новокузнецк", "Рязань", "Астрахань", "Набережные Челны", "Пенза", "Липецк",
-  "Киров", "Тула", "Чебоксары", "Калининград", "Брянск", "Курск", "Севастополь",
-  "Улан-Удэ", "Ставрополь", "Сочи", "Иваново", "Белгород", "Архангельск",
-  "Владимир", "Смоленск", "Калуга", "Чита", "Великий Новгород", "Псков",
-  "Вологда", "Сургут", "Петрозаводск", "Нарьян-Мар", "Сыктывкар", "Йошкар-Ола",
-  "Саранск", "Нальчик", "Владикавказ", "Грозный", "Магас", "Майкоп", "Черкесск",
-  "Элиста", "Абакан", "Горно-Алтайск", "Кызыл", "Ханты-Мансийск", "Салехард",
-  "Анадырь", "Петропавловск-Камчатский", "Магадан", "Благовещенск", "Биробиджан",
-  "Южно-Сахалинск", "Якутск", "Нижневартовск", "Стерлитамак", "Орск", "Старый Оскол",
-  "Волжский", "Череповец", "Кострома", "Воркута", "Мурманск", "Новороссийск",
-  // Беларусь
-  "Минск", "Брест", "Витебск", "Гомель", "Гродно", "Могилёв", "Бобруйск",
-  "Барановичи", "Борисов", "Пинск", "Орша", "Мозырь", "Солигорск", "Лида",
-  "Новополоцк", "Молодечно", "Полоцк", "Жлобин", "Светлогорск", "Речица",
-  "Жодино", "Слуцк", "Кобрин", "Сморгонь", "Волковыск", "Калинковичи",
-];
 
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   NEW: { label: "Новая", variant: "default" },
@@ -142,7 +117,7 @@ interface Order {
   notes: string | null;
 }
 
-// Компонент автоподбора города
+// Компонент автоподбора города с использованием API
 function CityAutocomplete({ 
   value, 
   onChange, 
@@ -154,17 +129,42 @@ function CityAutocomplete({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
+  const [suggestions, setSuggestions] = useState<Array<{name: string; fullName: string}>>([]);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const filteredCities = useMemo(() => {
-    if (!inputValue || inputValue.length < 1) return [];
-    return CITIES
-      .filter(city => city.toLowerCase().startsWith(inputValue.toLowerCase()))
-      .slice(0, 10);
-  }, [inputValue]);
+  // Debounced search
+  const searchCities = useCallback(async (query: string) => {
+    if (query.length < 1) {
+      setSuggestions([]);
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await fetch(`/api/cities?q=${encodeURIComponent(query)}&limit=10`);
+      const data = await response.json();
+      setSuggestions(data);
+    } catch (error) {
+      console.error("Error fetching cities:", error);
+      setSuggestions([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     setInputValue(value);
   }, [value]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (inputValue !== value) {
+        searchCities(inputValue);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [inputValue, searchCities, value]);
 
   return (
     <div className="relative">
@@ -179,19 +179,23 @@ function CityAutocomplete({
         onBlur={() => setTimeout(() => setIsOpen(false), 200)}
         placeholder={placeholder}
       />
-      {isOpen && filteredCities.length > 0 && (
+      {isOpen && (suggestions.length > 0 || isLoading) && (
         <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
-          {filteredCities.map((city) => (
+          {isLoading && (
+            <div className="px-3 py-2 text-gray-500">Поиск...</div>
+          )}
+          {suggestions.map((city) => (
             <div
-              key={city}
+              key={city.name}
               className="px-3 py-2 cursor-pointer hover:bg-gray-100"
               onClick={() => {
-                setInputValue(city);
-                onChange(city);
+                setInputValue(city.name);
+                onChange(city.name);
                 setIsOpen(false);
               }}
             >
-              {city}
+              <div className="font-medium">{city.name}</div>
+              <div className="text-xs text-gray-500">{city.fullName}</div>
             </div>
           ))}
         </div>
