@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
@@ -95,9 +95,9 @@ export async function PUT(
     }
 
     // Проверяем валидность роли
-    if (role && !VALID_ROLES.includes(role)) {
+    if (role && !VALID_ROLES.includes(role as any)) {
       return NextResponse.json(
-        { error: `Недопустимая роль: ${role}` },
+        { error: `Недопустимая роль: ${role}. Допустимые роли: ${VALID_ROLES.join(", ")}` },
         { status: 400 }
       );
     }

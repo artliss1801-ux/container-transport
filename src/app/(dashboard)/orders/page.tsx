@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
@@ -13,14 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Select,
   SelectContent,
@@ -36,11 +28,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Edit, Trash2, Download, CalendarIcon } from "lucide-react";
+import { Plus, Search, Edit, Trash2, Download, CalendarIcon, Settings2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
@@ -53,20 +51,53 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
   CANCELLED: { label: "Отменена", variant: "destructive" },
 };
 
+// Определение столбцов таблицы
+const ALL_COLUMNS = [
+  { id: "client", label: "Клиент", defaultWidth: 150 },
+  { id: "port", label: "Порт", defaultWidth: 100 },
+  { id: "containerNumber", label: "Номер контейнера", defaultWidth: 140 },
+  { id: "containerType", label: "Тип контейнера", defaultWidth: 130 },
+  { id: "cargoWeight", label: "Вес, кг", defaultWidth: 80 },
+  { id: "loadingDatetime", label: "Дата погрузки", defaultWidth: 140 },
+  { id: "status", label: "Статус", defaultWidth: 100 },
+  { id: "notes", label: "Примечания", defaultWidth: 200 },
+  { id: "orderNumber", label: "Заявка", defaultWidth: 130 },
+  { id: "route", label: "Маршрут", defaultWidth: 180 },
+  { id: "deliveryDate", label: "Дата доставки", defaultWidth: 120 },
+  { id: "driver", label: "Водитель", defaultWidth: 150 },
+  { id: "driverPhone", label: "Телефон", defaultWidth: 120 },
+  { id: "carrier", label: "Перевозчик", defaultWidth: 150 },
+  { id: "clientRate", label: "Ставка клиента", defaultWidth: 120 },
+  { id: "carrierRate", label: "Ставка перевозчика", defaultWidth: 140 },
+  { id: "carrierPaymentDueDate", label: "Срок оплаты", defaultWidth: 120 },
+  { id: "emptyContainerReturnDate", label: "Сдача порожнего", defaultWidth: 130 },
+  { id: "documentSubmissionDate", label: "Сдача документов", defaultWidth: 130 },
+] as const;
+
 interface Order {
   id: string;
   orderNumber: string;
+  client: string | null;
+  port: string | null;
   loadingDatetime: string;
   loadingCity: string;
   loadingAddress: string;
+  unloadingDatetime: string | null;
   unloadingCity: string;
   unloadingAddress: string;
   containerNumber: string;
   containerType: { id: string; name: string };
   cargoWeight: number;
   status: string;
-  driver: { id: string; fullName: string } | null;
+  driver: { id: string; fullName: string; phone: string | null } | null;
   vehicle: { id: string; vehicleNumber: string; trailerNumber: string | null } | null;
+  carrier: string | null;
+  clientRate: number | null;
+  carrierRate: number | null;
+  carrierPaymentDueDate: string | null;
+  deliveryDate: string | null;
+  emptyContainerReturnDate: string | null;
+  documentSubmissionDate: string | null;
   notes: string | null;
 }
 
@@ -86,11 +117,35 @@ export default function OrdersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
 
+  // Состояние видимости столбцов
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("ordersVisibleColumns");
+      if (saved) return JSON.parse(saved);
+    }
+    return ALL_COLUMNS.map(c => c.id);
+  });
+
+  // Сохраняем настройки столбцов в localStorage
+  useEffect(() => {
+    localStorage.setItem("ordersVisibleColumns", JSON.stringify(visibleColumns));
+  }, [visibleColumns]);
+
+  // Ширина столбцов
+  const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
+    const widths: Record<string, number> = {};
+    ALL_COLUMNS.forEach(c => widths[c.id] = c.defaultWidth);
+    return widths;
+  });
+
   // Form state
   const [formData, setFormData] = useState({
+    client: "",
+    port: "",
     loadingDatetime: "",
     loadingCity: "",
     loadingAddress: "",
+    unloadingDatetime: "",
     unloadingCity: "",
     unloadingAddress: "",
     containerNumber: "",
@@ -99,6 +154,13 @@ export default function OrdersPage() {
     status: "NEW",
     driverId: "",
     vehicleId: "",
+    carrier: "",
+    clientRate: "",
+    carrierRate: "",
+    carrierPaymentDueDate: "",
+    deliveryDate: "",
+    emptyContainerReturnDate: "",
+    documentSubmissionDate: "",
     notes: "",
   });
 
@@ -160,7 +222,9 @@ export default function OrdersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...data,
-          cargoWeight: parseFloat(data.cargoWeight),
+          cargoWeight: parseFloat(data.cargoWeight) || 0,
+          clientRate: data.clientRate ? parseFloat(data.clientRate) : null,
+          carrierRate: data.carrierRate ? parseFloat(data.carrierRate) : null,
           driverId: data.driverId || null,
           vehicleId: data.vehicleId || null,
           notes: data.notes || null,
@@ -176,7 +240,6 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["analytics"] });
       toast({
         title: editingOrder ? "Заявка обновлена" : "Заявка создана",
         description: editingOrder
@@ -207,7 +270,6 @@ export default function OrdersPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
-      queryClient.invalidateQueries({ queryKey: ["analytics"] });
       toast({ title: "Заявка удалена" });
       setDeleteDialogOpen(false);
       setOrderToDelete(null);
@@ -255,9 +317,12 @@ export default function OrdersPage() {
 
   const resetForm = () => {
     setFormData({
+      client: "",
+      port: "",
       loadingDatetime: "",
       loadingCity: "",
       loadingAddress: "",
+      unloadingDatetime: "",
       unloadingCity: "",
       unloadingAddress: "",
       containerNumber: "",
@@ -266,6 +331,13 @@ export default function OrdersPage() {
       status: "NEW",
       driverId: "",
       vehicleId: "",
+      carrier: "",
+      clientRate: "",
+      carrierRate: "",
+      carrierPaymentDueDate: "",
+      deliveryDate: "",
+      emptyContainerReturnDate: "",
+      documentSubmissionDate: "",
       notes: "",
     });
     setEditingOrder(null);
@@ -274,9 +346,12 @@ export default function OrdersPage() {
   const openEditDialog = (order: Order) => {
     setEditingOrder(order);
     setFormData({
+      client: order.client || "",
+      port: order.port || "",
       loadingDatetime: new Date(order.loadingDatetime).toISOString().slice(0, 16),
       loadingCity: order.loadingCity,
       loadingAddress: order.loadingAddress,
+      unloadingDatetime: order.unloadingDatetime ? new Date(order.unloadingDatetime).toISOString().slice(0, 16) : "",
       unloadingCity: order.unloadingCity,
       unloadingAddress: order.unloadingAddress,
       containerNumber: order.containerNumber,
@@ -285,6 +360,13 @@ export default function OrdersPage() {
       status: order.status,
       driverId: order.driver?.id || "",
       vehicleId: order.vehicle?.id || "",
+      carrier: order.carrier || "",
+      clientRate: order.clientRate?.toString() || "",
+      carrierRate: order.carrierRate?.toString() || "",
+      carrierPaymentDueDate: order.carrierPaymentDueDate ? order.carrierPaymentDueDate.slice(0, 10) : "",
+      deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : "",
+      emptyContainerReturnDate: order.emptyContainerReturnDate ? order.emptyContainerReturnDate.slice(0, 10) : "",
+      documentSubmissionDate: order.documentSubmissionDate ? order.documentSubmissionDate.slice(0, 10) : "",
       notes: order.notes || "",
     });
     setDialogOpen(true);
@@ -296,6 +378,49 @@ export default function OrdersPage() {
   };
 
   const isAdmin = session?.user?.role === "ADMIN";
+
+  const formatDate = (dateStr: string | null | undefined) => {
+    if (!dateStr) return "-";
+    return format(new Date(dateStr), "dd.MM.yyyy", { locale: ru });
+  };
+
+  const formatDateTime = (dateStr: string | null | undefined) => {
+    if (!dateStr) return "-";
+    return format(new Date(dateStr), "dd.MM.yyyy HH:mm", { locale: ru });
+  };
+
+  const toggleColumn = (columnId: string) => {
+    setVisibleColumns(prev => 
+      prev.includes(columnId)
+        ? prev.filter(id => id !== columnId)
+        : [...prev, columnId]
+    );
+  };
+
+  const getCellValue = (order: Order, columnId: string) => {
+    switch (columnId) {
+      case "client": return order.client || "-";
+      case "port": return order.port || "-";
+      case "containerNumber": return order.containerNumber;
+      case "containerType": return order.containerType?.name || "-";
+      case "cargoWeight": return order.cargoWeight;
+      case "loadingDatetime": return formatDateTime(order.loadingDatetime);
+      case "status": return <Badge variant={statusMap[order.status]?.variant || "default"}>{statusMap[order.status]?.label || order.status}</Badge>;
+      case "notes": return order.notes || "-";
+      case "orderNumber": return order.orderNumber;
+      case "route": return `${order.loadingCity} → ${order.unloadingCity}`;
+      case "deliveryDate": return formatDate(order.deliveryDate);
+      case "driver": return order.driver?.fullName || "-";
+      case "driverPhone": return order.driver?.phone || "-";
+      case "carrier": return order.carrier || "-";
+      case "clientRate": return order.clientRate ? `${order.clientRate} ₽` : "-";
+      case "carrierRate": return order.carrierRate ? `${order.carrierRate} ₽` : "-";
+      case "carrierPaymentDueDate": return formatDate(order.carrierPaymentDueDate);
+      case "emptyContainerReturnDate": return formatDate(order.emptyContainerReturnDate);
+      case "documentSubmissionDate": return formatDate(order.documentSubmissionDate);
+      default: return "-";
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -310,7 +435,26 @@ export default function OrdersPage() {
                   Управление заявками на перевозку
                 </CardDescription>
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Settings2 className="w-4 h-4 mr-2" />
+                      Столбцы
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    {ALL_COLUMNS.map((column) => (
+                      <DropdownMenuCheckboxItem
+                        key={column.id}
+                        checked={visibleColumns.includes(column.id)}
+                        onCheckedChange={() => toggleColumn(column.id)}
+                      >
+                        {column.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="outline"
                   size="sm"
@@ -320,7 +464,7 @@ export default function OrdersPage() {
                   <Download className="w-4 h-4 mr-2" />
                   Экспорт
                 </Button>
-                <Button size="sm" onClick={() => setDialogOpen(true)}>
+                <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }}>
                   <Plus className="w-4 h-4 mr-2" />
                   Новая заявка
                 </Button>
@@ -333,7 +477,7 @@ export default function OrdersPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="Поиск по номеру, контейнеру..."
+                  placeholder="Поиск по номеру, клиенту, контейнеру..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
@@ -395,62 +539,52 @@ export default function OrdersPage() {
             </div>
 
             {/* Table */}
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>№ заявки</TableHead>
-                    <TableHead>Дата загрузки</TableHead>
-                    <TableHead>Маршрут</TableHead>
-                    <TableHead>Контейнер</TableHead>
-                    <TableHead>Вес (т)</TableHead>
-                    <TableHead>Статус</TableHead>
-                    <TableHead>Водитель</TableHead>
-                    <TableHead className="w-20"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+            <div className="border rounded-lg overflow-auto">
+              <table className="w-full min-w-max">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    {ALL_COLUMNS.filter(c => visibleColumns.includes(c.id)).map((column) => (
+                      <th
+                        key={column.id}
+                        className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                        style={{ width: columnWidths[column.id], minWidth: columnWidths[column.id] }}
+                      >
+                        {column.label}
+                      </th>
+                    ))}
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20 sticky right-0 bg-gray-50">
+                      Действия
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
                   {isLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8">
+                    <tr>
+                      <td colSpan={visibleColumns.length + 1} className="text-center py-8">
                         Загрузка...
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   ) : ordersData?.orders?.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8">
+                    <tr>
+                      <td colSpan={visibleColumns.length + 1} className="text-center py-8">
                         Заявки не найдены
-                      </TableCell>
-                    </TableRow>
+                      </td>
+                    </tr>
                   ) : (
                     ordersData?.orders?.map((order: Order) => (
-                      <TableRow key={order.id}>
-                        <TableCell className="font-medium">
-                          {order.orderNumber}
-                        </TableCell>
-                        <TableCell>
-                          {format(new Date(order.loadingDatetime), "dd.MM.yyyy HH:mm", { locale: ru })}
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div>{order.loadingCity}</div>
-                            <div className="text-gray-500">→ {order.unloadingCity}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="text-sm">
-                            <div className="font-medium">{order.containerNumber}</div>
-                            <div className="text-gray-500">{order.containerType.name}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell>{order.cargoWeight}</TableCell>
-                        <TableCell>
-                          <Badge variant={statusMap[order.status]?.variant || "default"}>
-                            {statusMap[order.status]?.label || order.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{order.driver?.fullName || "-"}</TableCell>
-                        <TableCell>
+                      <tr key={order.id} className="hover:bg-gray-50">
+                        {ALL_COLUMNS.filter(c => visibleColumns.includes(c.id)).map((column) => (
+                          <td
+                            key={column.id}
+                            className="px-3 py-3 text-sm whitespace-nowrap"
+                            style={{ width: columnWidths[column.id], maxWidth: columnWidths[column.id] * 2 }}
+                          >
+                            <div className="truncate" title={String(getCellValue(order, column.id))}>
+                              {getCellValue(order, column.id)}
+                            </div>
+                          </td>
+                        ))}
+                        <td className="px-3 py-3 sticky right-0 bg-white">
                           <div className="flex gap-1">
                             <Button
                               variant="ghost"
@@ -473,12 +607,12 @@ export default function OrdersPage() {
                               </Button>
                             )}
                           </div>
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     ))
                   )}
-                </TableBody>
-              </Table>
+                </tbody>
+              </table>
             </div>
 
             {/* Pagination */}
@@ -490,7 +624,7 @@ export default function OrdersPage() {
                   disabled={page === 1}
                   onClick={() => setPage(page - 1)}
                 >
-                  Назад
+                  <ChevronLeft className="w-4 h-4" />
                 </Button>
                 <span className="flex items-center px-3 text-sm">
                   {page} / {ordersData.pagination.totalPages}
@@ -501,7 +635,7 @@ export default function OrdersPage() {
                   disabled={page === ordersData.pagination.totalPages}
                   onClick={() => setPage(page + 1)}
                 >
-                  Далее
+                  <ChevronRight className="w-4 h-4" />
                 </Button>
               </div>
             )}
@@ -510,7 +644,7 @@ export default function OrdersPage() {
 
         {/* Create/Edit Dialog */}
         <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingOrder ? "Редактировать заявку" : "Новая заявка"}
@@ -520,9 +654,28 @@ export default function OrdersPage() {
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
-              <div className="grid grid-cols-2 gap-4 py-4">
-                <div className="col-span-2">
-                  <Label>Дата и время загрузки</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 py-4">
+                {/* Клиент и Порт */}
+                <div>
+                  <Label>Клиент</Label>
+                  <Input
+                    value={formData.client}
+                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
+                    placeholder="Наименование клиента"
+                  />
+                </div>
+                <div>
+                  <Label>Порт</Label>
+                  <Input
+                    value={formData.port}
+                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+                    placeholder="Порт"
+                  />
+                </div>
+
+                {/* Дата и время загрузки */}
+                <div className="md:col-span-2">
+                  <Label>Дата и время загрузки *</Label>
                   <Input
                     type="datetime-local"
                     value={formData.loadingDatetime}
@@ -531,8 +684,9 @@ export default function OrdersPage() {
                   />
                 </div>
 
+                {/* Место загрузки */}
                 <div>
-                  <Label>Город загрузки</Label>
+                  <Label>Город загрузки *</Label>
                   <Input
                     value={formData.loadingCity}
                     onChange={(e) => setFormData({ ...formData, loadingCity: e.target.value })}
@@ -540,24 +694,35 @@ export default function OrdersPage() {
                   />
                 </div>
                 <div>
-                  <Label>Город выгрузки</Label>
-                  <Input
-                    value={formData.unloadingCity}
-                    onChange={(e) => setFormData({ ...formData, unloadingCity: e.target.value })}
-                    required
-                  />
-                </div>
-
-                <div>
-                  <Label>Адрес загрузки</Label>
+                  <Label>Адрес загрузки *</Label>
                   <Input
                     value={formData.loadingAddress}
                     onChange={(e) => setFormData({ ...formData, loadingAddress: e.target.value })}
                     required
                   />
                 </div>
+
+                {/* Дата выгрузки */}
+                <div className="md:col-span-2">
+                  <Label>Дата и время выгрузки</Label>
+                  <Input
+                    type="datetime-local"
+                    value={formData.unloadingDatetime}
+                    onChange={(e) => setFormData({ ...formData, unloadingDatetime: e.target.value })}
+                  />
+                </div>
+
+                {/* Место выгрузки */}
                 <div>
-                  <Label>Адрес выгрузки</Label>
+                  <Label>Город выгрузки *</Label>
+                  <Input
+                    value={formData.unloadingCity}
+                    onChange={(e) => setFormData({ ...formData, unloadingCity: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <Label>Адрес выгрузки *</Label>
                   <Input
                     value={formData.unloadingAddress}
                     onChange={(e) => setFormData({ ...formData, unloadingAddress: e.target.value })}
@@ -565,8 +730,9 @@ export default function OrdersPage() {
                   />
                 </div>
 
+                {/* Контейнер */}
                 <div>
-                  <Label>Номер контейнера</Label>
+                  <Label>Номер контейнера *</Label>
                   <Input
                     value={formData.containerNumber}
                     onChange={(e) => setFormData({ ...formData, containerNumber: e.target.value })}
@@ -574,7 +740,7 @@ export default function OrdersPage() {
                   />
                 </div>
                 <div>
-                  <Label>Тип контейнера</Label>
+                  <Label>Тип контейнера *</Label>
                   <Select
                     value={formData.containerTypeId}
                     onValueChange={(value) => setFormData({ ...formData, containerTypeId: value })}
@@ -593,7 +759,7 @@ export default function OrdersPage() {
                 </div>
 
                 <div>
-                  <Label>Вес груза (тонны)</Label>
+                  <Label>Вес груза (кг) *</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -603,7 +769,7 @@ export default function OrdersPage() {
                   />
                 </div>
                 <div>
-                  <Label>Статус</Label>
+                  <Label>Статус *</Label>
                   <Select
                     value={formData.status}
                     onValueChange={(value) => setFormData({ ...formData, status: value })}
@@ -620,6 +786,7 @@ export default function OrdersPage() {
                   </Select>
                 </div>
 
+                {/* Водитель и транспорт */}
                 <div>
                   <Label>Водитель</Label>
                   <Select
@@ -657,7 +824,74 @@ export default function OrdersPage() {
                   </Select>
                 </div>
 
-                <div className="col-span-2">
+                {/* Перевозчик */}
+                <div className="md:col-span-2">
+                  <Label>Перевозчик</Label>
+                  <Input
+                    value={formData.carrier}
+                    onChange={(e) => setFormData({ ...formData, carrier: e.target.value })}
+                    placeholder="Наименование перевозчика"
+                  />
+                </div>
+
+                {/* Финансы */}
+                <div>
+                  <Label>Ставка клиента (₽)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.clientRate}
+                    onChange={(e) => setFormData({ ...formData, clientRate: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>Ставка перевозчика (₽)</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.carrierRate}
+                    onChange={(e) => setFormData({ ...formData, carrierRate: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div>
+                  <Label>Срок оплаты перевозчику</Label>
+                  <Input
+                    type="date"
+                    value={formData.carrierPaymentDueDate}
+                    onChange={(e) => setFormData({ ...formData, carrierPaymentDueDate: e.target.value })}
+                  />
+                </div>
+
+                {/* Даты */}
+                <div>
+                  <Label>Дата доставки</Label>
+                  <Input
+                    type="date"
+                    value={formData.deliveryDate}
+                    onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Дата сдачи порожнего контейнера</Label>
+                  <Input
+                    type="date"
+                    value={formData.emptyContainerReturnDate}
+                    onChange={(e) => setFormData({ ...formData, emptyContainerReturnDate: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Дата сдачи документов</Label>
+                  <Input
+                    type="date"
+                    value={formData.documentSubmissionDate}
+                    onChange={(e) => setFormData({ ...formData, documentSubmissionDate: e.target.value })}
+                  />
+                </div>
+
+                {/* Примечания */}
+                <div className="md:col-span-2">
                   <Label>Примечания</Label>
                   <Textarea
                     value={formData.notes}
