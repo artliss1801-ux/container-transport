@@ -4,29 +4,36 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { z } from "zod";
 
+// Helper to parse date string (handles empty strings)
+const parseDate = (val: string | null | undefined): Date | null => {
+  if (!val || val.trim() === "") return null;
+  const date = new Date(val);
+  return isNaN(date.getTime()) ? null : date;
+};
+
 const orderUpdateSchema = z.object({
-  client: z.string().nullable().optional(),
-  port: z.string().nullable().optional(),
-  loadingDatetime: z.string().transform((val) => new Date(val)),
+  client: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  port: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  loadingDatetime: z.string().min(1, "Укажите дату и время загрузки").transform((val) => new Date(val)),
   loadingCity: z.string().min(1, "Укажите город загрузки"),
   loadingAddress: z.string().min(1, "Укажите адрес загрузки"),
-  unloadingDatetime: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
+  unloadingDatetime: z.string().transform(val => parseDate(val)).nullable().optional(),
   unloadingCity: z.string().min(1, "Укажите город выгрузки"),
   unloadingAddress: z.string().min(1, "Укажите адрес выгрузки"),
   containerNumber: z.string().min(1, "Укажите номер контейнера"),
   containerTypeId: z.string().min(1, "Выберите тип контейнера"),
   cargoWeight: z.number().positive("Вес должен быть положительным числом"),
-  status: z.enum(["NEW", "IN_PROGRESS", "DELIVERED", "CANCELLED"]),
-  driverId: z.string().nullable().optional(),
-  vehicleId: z.string().nullable().optional(),
-  carrier: z.string().nullable().optional(),
+  status: z.string().min(1),
+  driverId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  vehicleId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  carrier: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   clientRate: z.number().nullable().optional(),
   carrierRate: z.number().nullable().optional(),
-  carrierPaymentDueDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
-  deliveryDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
-  emptyContainerReturnDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
-  documentSubmissionDate: z.string().nullable().optional().transform((val) => val ? new Date(val) : null),
-  notes: z.string().nullable().optional(),
+  carrierPaymentDueDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  deliveryDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  emptyContainerReturnDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  documentSubmissionDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  notes: z.string().transform(val => val === "" ? null : val).nullable().optional(),
 });
 
 // GET - Get single order
