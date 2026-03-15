@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+// Допустимые роли (должны совпадать с Prisma enum)
+const VALID_ROLES = ["ADMIN", "LOGISTICS_MANAGER", "COMMERCIAL_MANAGER", "ACCOUNTANT", "LAWYER"] as const;
+
 // GET - получить пользователя по ID (только для админа)
 export async function GET(
   request: NextRequest,
@@ -28,10 +31,6 @@ export async function GET(
         isTwoFactorEnabled: true,
         emailVerified: true,
         createdAt: true,
-        updatedAt: true,
-        _count: {
-          select: { orders: true },
-        },
       },
     });
 
@@ -43,10 +42,10 @@ export async function GET(
     }
 
     return NextResponse.json(user);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Get user error:", error);
     return NextResponse.json(
-      { error: "Ошибка получения пользователя" },
+      { error: "Ошибка получения пользователя", details: error.message },
       { status: 500 }
     );
   }
@@ -67,6 +66,8 @@ export async function PUT(
     const { id } = await params;
     const body = await request.json();
     const { email, name, password, role } = body;
+
+    console.log("PUT user request:", { id, email, name, role });
 
     // Проверяем существование пользователя
     const existingUser = await db.user.findUnique({
@@ -93,14 +94,24 @@ export async function PUT(
       }
     }
 
+    // Проверяем валидность роли
+    if (role && !VALID_ROLES.includes(role)) {
+      return NextResponse.json(
+        { error: `Недопустимая роль: ${role}` },
+        { status: 400 }
+      );
+    }
+
     // Подготавливаем данные для обновления
     const updateData: any = {};
     if (email) updateData.email = email;
     if (name !== undefined) updateData.name = name || null;
-    if (role) updateData.role = role;
+    if (role && VALID_ROLES.includes(role as any)) updateData.role = role;
     if (password) {
       updateData.password = await bcrypt.hash(password, 12);
     }
+
+    console.log("Update data:", updateData);
 
     // Обновляем пользователя
     const user = await db.user.update({
@@ -111,15 +122,15 @@ export async function PUT(
         email: true,
         name: true,
         role: true,
-        updatedAt: true,
       },
     });
 
+    console.log("User updated successfully:", user);
     return NextResponse.json(user);
-  } catch (error) {
+  } catch (error: any) {
     console.error("Update user error:", error);
     return NextResponse.json(
-      { error: "Ошибка обновления пользователя" },
+      { error: "Ошибка обновления пользователя", details: error.message, code: error.code },
       { status: 500 }
     );
   }
@@ -165,10 +176,10 @@ export async function DELETE(
     });
 
     return NextResponse.json({ message: "Пользователь удален" });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Delete user error:", error);
     return NextResponse.json(
-      { error: "Ошибка удаления пользователя" },
+      { error: "Ошибка удаления пользователя", details: error.message },
       { status: 500 }
     );
   }

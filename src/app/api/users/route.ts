@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
 
+// Допустимые роли (должны совпадать с Prisma enum)
+const VALID_ROLES = ["ADMIN", "LOGISTICS_MANAGER", "COMMERCIAL_MANAGER", "ACCOUNTANT", "LAWYER"] as const;
+
 // GET - получить список пользователей (только для админа)
 export async function GET(request: NextRequest) {
   try {
@@ -44,10 +47,6 @@ export async function GET(request: NextRequest) {
           isTwoFactorEnabled: true,
           emailVerified: true,
           createdAt: true,
-          updatedAt: true,
-          _count: {
-            select: { orders: true },
-          },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -65,10 +64,10 @@ export async function GET(request: NextRequest) {
         totalPages: Math.ceil(total / limit),
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Get users error:", error);
     return NextResponse.json(
-      { error: "Ошибка получения пользователей" },
+      { error: "Ошибка получения пользователей", details: error.message },
       { status: 500 }
     );
   }
@@ -86,9 +85,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, name, password, role } = body;
 
+    console.log("POST user request:", { email, name, role });
+
+    // Валидация
     if (!email || !password || !role) {
       return NextResponse.json(
         { error: "Email, пароль и роль обязательны" },
+        { status: 400 }
+      );
+    }
+
+    // Проверка валидности роли
+    if (!VALID_ROLES.includes(role as any)) {
+      return NextResponse.json(
+        { error: `Недопустимая роль: ${role}. Допустимые роли: ${VALID_ROLES.join(", ")}` },
         { status: 400 }
       );
     }
@@ -114,7 +124,7 @@ export async function POST(request: NextRequest) {
         email,
         name: name || null,
         password: hashedPassword,
-        role,
+        role: role as any,
       },
       select: {
         id: true,
@@ -125,11 +135,12 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    console.log("User created successfully:", user);
     return NextResponse.json(user, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Create user error:", error);
     return NextResponse.json(
-      { error: "Ошибка создания пользователя" },
+      { error: "Ошибка создания пользователя", details: error.message, code: error.code },
       { status: 500 }
     );
   }
