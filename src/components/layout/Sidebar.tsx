@@ -14,6 +14,8 @@ import {
   Users,
   Settings,
   LogOut,
+  Building2,
+  Anchor,
 } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,8 @@ const adminNavigation = [
 ];
 
 const directoryNavigation = [
+  { name: "Клиенты", href: "/clients", icon: Building2 },
+  { name: "Порты", href: "/ports", icon: Anchor },
   { name: "Водители", href: "/directories/drivers", icon: Users },
   { name: "Транспорт", href: "/directories/vehicles", icon: Truck },
   { name: "Типы контейнеров", href: "/directories/container-types", icon: Container },
@@ -40,6 +44,8 @@ export function Sidebar() {
   const { data: session } = useSession();
 
   const isAdmin = session?.user?.role === "ADMIN";
+  const isCommercialManager = session?.user?.role === "COMMERCIAL_MANAGER";
+  const canViewDirectories = isAdmin || isCommercialManager || session?.user?.role === "LOGISTICS_MANAGER";
 
   const handleSignOut = async () => {
     await signOut({ callbackUrl: "/login" });
@@ -114,8 +120,8 @@ export function Sidebar() {
           </>
         )}
 
-        {/* Directories section - Admin only */}
-        {isAdmin && (
+        {/* Directories section */}
+        {canViewDirectories && (
           <>
             <Separator className="my-4" />
             <div className="px-3 mb-2">
