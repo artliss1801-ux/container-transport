@@ -13,7 +13,16 @@ interface HeaderProps {
 export function Header({ title, onMenuClick }: HeaderProps) {
   const { data: session } = useSession();
 
+<<<<<<< HEAD
   const roleLabel = session?.user?.role === "ADMIN" ? "Администратор" : "Менеджер";
+=======
+  // Отладка
+  console.log("Header - session.user.role:", session?.user?.role);
+  console.log("Header - roleLabels:", roleLabels);
+  
+  const roleLabel = roleLabels[session?.user?.role || ""] || session?.user?.role || "Пользователь";
+  console.log("Header - roleLabel:", roleLabel);
+>>>>>>> e117ad3 (Add session debug endpoint and improve Header role display)
 
   return (
     <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6">
