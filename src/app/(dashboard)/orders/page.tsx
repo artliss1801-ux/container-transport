@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { Header } from "@/components/layout/Header";
 import { Button } from "@/components/ui/button";
@@ -44,9 +44,34 @@ import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
+// Список основных городов России и Беларуси
+const CITIES = [
+  // Россия
+  "Москва", "Московская область", "Санкт-Петербург", "Новосибирск", "Екатеринбург",
+  "Казань", "Нижний Новгород", "Челябинск", "Самара", "Омск", "Ростов-на-Дону",
+  "Уфа", "Красноярск", "Воронеж", "Пермь", "Волгоград", "Краснодар", "Саратов",
+  "Тюмень", "Тольятти", "Ижевск", "Барнаул", "Иркутск", "Ульяновск", "Хабаровск",
+  "Владивосток", "Ярославль", "Махачкала", "Томск", "Оренбург", "Кемерово",
+  "Новокузнецк", "Рязань", "Астрахань", "Набережные Челны", "Пенза", "Липецк",
+  "Киров", "Тула", "Чебоксары", "Калининград", "Брянск", "Курск", "Севастополь",
+  "Улан-Удэ", "Ставрополь", "Сочи", "Иваново", "Белгород", "Архангельск",
+  "Владимир", "Смоленск", "Калуга", "Чита", "Великий Новгород", "Псков",
+  "Вологда", "Сургут", "Петрозаводск", "Нарьян-Мар", "Сыктывкар", "Йошкар-Ола",
+  "Саранск", "Нальчик", "Владикавказ", "Грозный", "Магас", "Майкоп", "Черкесск",
+  "Элиста", "Абакан", "Горно-Алтайск", "Кызыл", "Ханты-Мансийск", "Салехард",
+  "Анадырь", "Петропавловск-Камчатский", "Магадан", "Благовещенск", "Биробиджан",
+  "Южно-Сахалинск", "Якутск", "Нижневартовск", "Стерлитамак", "Орск", "Старый Оскол",
+  "Волжский", "Череповец", "Кострома", "Воркута", "Мурманск", "Новороссийск",
+  // Беларусь
+  "Минск", "Брест", "Витебск", "Гомель", "Гродно", "Могилёв", "Бобруйск",
+  "Барановичи", "Борисов", "Пинск", "Орша", "Мозырь", "Солигорск", "Лида",
+  "Новополоцк", "Молодечно", "Полоцк", "Жлобин", "Светлогорск", "Речица",
+  "Жодино", "Слуцк", "Кобрин", "Сморгонь", "Волковыск", "Калинковичи",
+];
+
 const statusMap: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   NEW: { label: "Новая", variant: "default" },
-  IN_PROGRESS: { label: "В пути", variant: "secondary" },
+  IN_PROGRESS: { label: "В работе", variant: "secondary" },
   DELIVERED: { label: "Доставлена", variant: "outline" },
   CANCELLED: { label: "Отменена", variant: "destructive" },
 };
@@ -117,6 +142,64 @@ interface Order {
   notes: string | null;
 }
 
+// Компонент автоподбора города
+function CityAutocomplete({ 
+  value, 
+  onChange, 
+  placeholder 
+}: { 
+  value: string; 
+  onChange: (value: string) => void; 
+  placeholder: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
+
+  const filteredCities = useMemo(() => {
+    if (!inputValue || inputValue.length < 1) return [];
+    return CITIES
+      .filter(city => city.toLowerCase().startsWith(inputValue.toLowerCase()))
+      .slice(0, 10);
+  }, [inputValue]);
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  return (
+    <div className="relative">
+      <Input
+        value={inputValue}
+        onChange={(e) => {
+          setInputValue(e.target.value);
+          onChange(e.target.value);
+          setIsOpen(true);
+        }}
+        onFocus={() => setIsOpen(true)}
+        onBlur={() => setTimeout(() => setIsOpen(false), 200)}
+        placeholder={placeholder}
+      />
+      {isOpen && filteredCities.length > 0 && (
+        <div className="absolute z-50 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+          {filteredCities.map((city) => (
+            <div
+              key={city}
+              className="px-3 py-2 cursor-pointer hover:bg-gray-100"
+              onClick={() => {
+                setInputValue(city);
+                onChange(city);
+                setIsOpen(false);
+              }}
+            >
+              {city}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OrdersPage() {
   const { data: session } = useSession();
   const { toast } = useToast();
@@ -142,19 +225,17 @@ export default function OrdersPage() {
     return ALL_COLUMNS.map(c => c.id);
   });
 
-  // Сохраняем настройки столбцов в localStorage
   useEffect(() => {
     localStorage.setItem("ordersVisibleColumns", JSON.stringify(visibleColumns));
   }, [visibleColumns]);
 
-  // Ширина столбцов
   const [columnWidths, setColumnWidths] = useState<Record<string, number>>(() => {
     const widths: Record<string, number> = {};
     ALL_COLUMNS.forEach(c => widths[c.id] = c.defaultWidth);
     return widths;
   });
 
-  // Form state
+  // Form state - упрощенная форма для новой заявки
   const [formData, setFormData] = useState({
     clientId: "",
     portId: "",
@@ -167,6 +248,7 @@ export default function OrdersPage() {
     containerNumber: "",
     containerTypeId: "",
     cargoWeight: "",
+    // Поля только для редактирования
     status: "NEW",
     driverId: "",
     vehicleId: "",
@@ -254,21 +336,40 @@ export default function OrdersPage() {
       const url = editingOrder ? `/api/orders/${editingOrder.id}` : "/api/orders";
       const method = editingOrder ? "PUT" : "POST";
 
+      const body: any = {
+        clientId: data.clientId || null,
+        portId: data.portId || null,
+        loadingDatetime: data.loadingDatetime,
+        loadingCity: data.loadingCity,
+        loadingAddress: data.loadingAddress,
+        unloadingDatetime: data.unloadingDatetime || null,
+        unloadingCity: data.unloadingCity,
+        unloadingAddress: data.unloadingAddress,
+        containerNumber: data.containerNumber,
+        containerTypeId: data.containerTypeId,
+        cargoWeight: parseFloat(data.cargoWeight) || 0,
+        clientRate: data.clientRate ? parseFloat(data.clientRate) : null,
+        clientRateVat: data.clientRateVat || "NO_VAT",
+        notes: data.notes || null,
+      };
+
+      // Дополнительные поля только при редактировании
+      if (editingOrder) {
+        body.status = data.status || "NEW";
+        body.driverId = data.driverId || null;
+        body.vehicleId = data.vehicleId || null;
+        body.carrier = data.carrier || null;
+        body.carrierRate = data.carrierRate ? parseFloat(data.carrierRate) : null;
+        body.carrierRateVat = data.carrierRateVat || "NO_VAT";
+        body.carrierPaymentDays = data.carrierPaymentDays ? parseInt(data.carrierPaymentDays) : null;
+        body.emptyContainerReturnDate = data.emptyContainerReturnDate || null;
+        body.documentSubmissionDate = data.documentSubmissionDate || null;
+      }
+
       const response = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...data,
-          cargoWeight: parseFloat(data.cargoWeight) || 0,
-          clientRate: data.clientRate ? parseFloat(data.clientRate) : null,
-          carrierRate: data.carrierRate ? parseFloat(data.carrierRate) : null,
-          carrierPaymentDays: data.carrierPaymentDays ? parseInt(data.carrierPaymentDays) : null,
-          driverId: data.driverId || null,
-          vehicleId: data.vehicleId || null,
-          clientId: data.clientId || null,
-          portId: data.portId || null,
-          notes: data.notes || null,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (!response.ok) {
@@ -536,7 +637,7 @@ export default function OrdersPage() {
                 <SelectContent>
                   <SelectItem value="ALL">Все статусы</SelectItem>
                   <SelectItem value="NEW">Новые</SelectItem>
-                  <SelectItem value="IN_PROGRESS">В пути</SelectItem>
+                  <SelectItem value="IN_PROGRESS">В работе</SelectItem>
                   <SelectItem value="DELIVERED">Доставлены</SelectItem>
                   <SelectItem value="CANCELLED">Отменены</SelectItem>
                 </SelectContent>
@@ -696,7 +797,7 @@ export default function OrdersPage() {
                 {editingOrder ? "Редактировать заявку" : "Новая заявка"}
               </DialogTitle>
               <DialogDescription>
-                Заполните информацию о заявке на перевозку
+                {editingOrder ? "Измените данные заявки" : "Заполните информацию о заявке на перевозку"}
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit}>
@@ -753,11 +854,10 @@ export default function OrdersPage() {
                 {/* Место загрузки */}
                 <div>
                   <Label>Город загрузки *</Label>
-                  <Input
+                  <CityAutocomplete
                     value={formData.loadingCity}
-                    onChange={(e) => setFormData({ ...formData, loadingCity: e.target.value })}
-                    placeholder="Введите город"
-                    required
+                    onChange={(value) => setFormData({ ...formData, loadingCity: value })}
+                    placeholder="Начните вводить город..."
                   />
                 </div>
                 <div>
@@ -783,11 +883,10 @@ export default function OrdersPage() {
                 {/* Место выгрузки */}
                 <div>
                   <Label>Город выгрузки *</Label>
-                  <Input
+                  <CityAutocomplete
                     value={formData.unloadingCity}
-                    onChange={(e) => setFormData({ ...formData, unloadingCity: e.target.value })}
-                    placeholder="Введите город"
-                    required
+                    onChange={(value) => setFormData({ ...formData, unloadingCity: value })}
+                    placeholder="Начните вводить город..."
                   />
                 </div>
                 <div>
@@ -838,73 +937,8 @@ export default function OrdersPage() {
                     required
                   />
                 </div>
-                <div>
-                  <Label>Статус *</Label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(value) => setFormData({ ...formData, status: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NEW">Новая</SelectItem>
-                      <SelectItem value="IN_PROGRESS">В пути</SelectItem>
-                      <SelectItem value="DELIVERED">Доставлена</SelectItem>
-                      <SelectItem value="CANCELLED">Отменена</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                {/* Водитель и транспорт */}
-                <div>
-                  <Label>Водитель</Label>
-                  <Select
-                    value={formData.driverId}
-                    onValueChange={(value) => setFormData({ ...formData, driverId: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите водителя" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {drivers?.map((d: any) => (
-                        <SelectItem key={d.id} value={d.id}>
-                          {d.fullName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Транспорт</Label>
-                  <Select
-                    value={formData.vehicleId}
-                    onValueChange={(value) => setFormData({ ...formData, vehicleId: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Выберите транспорт" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vehicles?.map((v: any) => (
-                        <SelectItem key={v.id} value={v.id}>
-                          {v.vehicleNumber} {v.trailerNumber ? `/ ${v.trailerNumber}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Перевозчик */}
-                <div className="md:col-span-2">
-                  <Label>Перевозчик</Label>
-                  <Input
-                    value={formData.carrier}
-                    onChange={(e) => setFormData({ ...formData, carrier: e.target.value })}
-                    placeholder="Наименование перевозчика"
-                  />
-                </div>
-
-                {/* Финансы - Ставка клиента */}
+                {/* Ставка клиента */}
                 <div>
                   <Label>Ставка клиента (₽)</Label>
                   <Input
@@ -934,74 +968,152 @@ export default function OrdersPage() {
                   </Select>
                 </div>
 
-                {/* Финансы - Ставка перевозчика */}
-                <div>
-                  <Label>Ставка перевозчика (₽)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.carrierRate}
-                    onChange={(e) => setFormData({ ...formData, carrierRate: e.target.value })}
-                    placeholder="0.00"
-                  />
-                </div>
-                <div>
-                  <Label>НДС перевозчика</Label>
-                  <Select
-                    value={formData.carrierRateVat}
-                    onValueChange={(value) => setFormData({ ...formData, carrierRateVat: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {vatOptions.carrier.map((v) => (
-                        <SelectItem key={v.value} value={v.value}>
-                          {v.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Срок оплаты */}
-                <div>
-                  <Label>Срок оплаты перевозчику (банковских дней)</Label>
-                  <Input
-                    type="number"
-                    value={formData.carrierPaymentDays}
-                    onChange={(e) => setFormData({ ...formData, carrierPaymentDays: e.target.value })}
-                    placeholder="Количество дней"
-                  />
-                </div>
-
-                {/* Даты */}
-                <div>
-                  <Label>Дата сдачи порожнего контейнера</Label>
-                  <Input
-                    type="date"
-                    value={formData.emptyContainerReturnDate}
-                    onChange={(e) => setFormData({ ...formData, emptyContainerReturnDate: e.target.value })}
-                  />
-                </div>
-                <div>
-                  <Label>Дата сдачи документов</Label>
-                  <Input
-                    type="date"
-                    value={formData.documentSubmissionDate}
-                    onChange={(e) => setFormData({ ...formData, documentSubmissionDate: e.target.value })}
-                  />
-                </div>
-
                 {/* Примечания */}
                 <div className="md:col-span-2">
                   <Label>Примечания</Label>
                   <Textarea
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    rows={3}
+                    rows={2}
                   />
                 </div>
+
+                {/* === ПОЛЯ ТОЛЬКО ДЛЯ РЕДАКТИРОВАНИЯ === */}
+                {editingOrder && (
+                  <>
+                    <div className="md:col-span-2 border-t pt-4 mt-2">
+                      <h4 className="font-medium text-sm text-gray-500 mb-4">Данные для обработки заявки</h4>
+                    </div>
+
+                    {/* Статус */}
+                    <div>
+                      <Label>Статус</Label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value) => setFormData({ ...formData, status: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="NEW">Новая</SelectItem>
+                          <SelectItem value="IN_PROGRESS">В работе</SelectItem>
+                          <SelectItem value="DELIVERED">Доставлена</SelectItem>
+                          <SelectItem value="CANCELLED">Отменена</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Водитель */}
+                    <div>
+                      <Label>Водитель</Label>
+                      <Select
+                        value={formData.driverId}
+                        onValueChange={(value) => setFormData({ ...formData, driverId: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите водителя" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {drivers?.map((d: any) => (
+                            <SelectItem key={d.id} value={d.id}>
+                              {d.fullName}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Транспорт */}
+                    <div>
+                      <Label>Транспорт</Label>
+                      <Select
+                        value={formData.vehicleId}
+                        onValueChange={(value) => setFormData({ ...formData, vehicleId: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Выберите транспорт" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {vehicles?.map((v: any) => (
+                            <SelectItem key={v.id} value={v.id}>
+                              {v.vehicleNumber} {v.trailerNumber ? `/ ${v.trailerNumber}` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Перевозчик */}
+                    <div className="md:col-span-2">
+                      <Label>Перевозчик</Label>
+                      <Input
+                        value={formData.carrier}
+                        onChange={(e) => setFormData({ ...formData, carrier: e.target.value })}
+                        placeholder="Наименование перевозчика"
+                      />
+                    </div>
+
+                    {/* Ставка перевозчика */}
+                    <div>
+                      <Label>Ставка перевозчика (₽)</Label>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        value={formData.carrierRate}
+                        onChange={(e) => setFormData({ ...formData, carrierRate: e.target.value })}
+                        placeholder="0.00"
+                      />
+                    </div>
+                    <div>
+                      <Label>НДС перевозчика</Label>
+                      <Select
+                        value={formData.carrierRateVat}
+                        onValueChange={(value) => setFormData({ ...formData, carrierRateVat: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {vatOptions.carrier.map((v) => (
+                            <SelectItem key={v.value} value={v.value}>
+                              {v.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Срок оплаты */}
+                    <div>
+                      <Label>Срок оплаты перевозчику (банковских дней)</Label>
+                      <Input
+                        type="number"
+                        value={formData.carrierPaymentDays}
+                        onChange={(e) => setFormData({ ...formData, carrierPaymentDays: e.target.value })}
+                        placeholder="Количество дней"
+                      />
+                    </div>
+
+                    {/* Даты */}
+                    <div>
+                      <Label>Дата сдачи порожнего контейнера</Label>
+                      <Input
+                        type="date"
+                        value={formData.emptyContainerReturnDate}
+                        onChange={(e) => setFormData({ ...formData, emptyContainerReturnDate: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Дата сдачи документов</Label>
+                      <Input
+                        type="date"
+                        value={formData.documentSubmissionDate}
+                        onChange={(e) => setFormData({ ...formData, documentSubmissionDate: e.target.value })}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>
