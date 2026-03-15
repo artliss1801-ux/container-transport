@@ -99,8 +99,10 @@ model Order {
   orderNumber           String        @unique  // Автоматически генерируемый номер
 
   // Клиент и порт
-  client                String?       // Наименование клиента
-  port                  String?       // Порт
+  clientId              String?       // ID клиента
+  client                Client?       @relation(fields: [clientId], references: [id])
+  portId                String?       // ID порта
+  port                  Port?         @relation(fields: [portId], references: [id])
 
   // Место загрузки
   loadingDatetime       DateTime
@@ -132,11 +134,12 @@ model Order {
 
   // Финансы
   clientRate            Float?        // Ставка клиента
+  clientRateVat         String?       @default("NO_VAT") // НДС клиента: NO_VAT, VAT_0, VAT_22
   carrierRate           Float?        // Ставка перевозчика
-  carrierPaymentDueDate DateTime?     // Срок оплаты перевозчику
+  carrierRateVat        String?       @default("NO_VAT") // НДС перевозчика: NO_VAT, VAT_0, VAT_5, VAT_7, VAT_10, VAT_22
+  carrierPaymentDays    Int?          // Срок оплаты перевозчику (банковские дни)
 
   // Даты
-  deliveryDate          DateTime?     // Дата доставки
   emptyContainerReturnDate DateTime?  // Дата сдачи порожнего контейнера
   documentSubmissionDate  DateTime?   // Дата сдачи документов
 
@@ -160,6 +163,42 @@ model Order {
 // ============================================
 // СПРАВОЧНИКИ
 // ============================================
+
+// Клиенты
+model Client {
+  id              String    @id @default(cuid())
+  name            String    // Наименование клиента
+  inn             String?   // ИНН
+  kpp             String?   // КПП
+  address         String?   @db.Text // Юридический адрес
+  contactPerson   String?   // Контактное лицо
+  phone           String?   // Телефон
+  email           String?   // Email
+  notes           String?   @db.Text // Примечания
+  isActive        Boolean   @default(true)
+
+  // Связи
+  orders          Order[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// Порты
+model Port {
+  id              String    @id @default(cuid())
+  name            String    // Название порта
+  code            String?   // Код порта
+  country         String?   // Страна
+  notes           String?   @db.Text // Примечания
+  isActive        Boolean   @default(true)
+
+  // Связи
+  orders          Order[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
 
 // Водители
 model Driver {

@@ -11,10 +11,10 @@ const parseDate = (val: string | null | undefined): Date | null => {
   return isNaN(date.getTime()) ? null : date;
 };
 
-// Schema for creating/updating orders
+// Schema for creating/updating orders (updated with new fields)
 const orderSchema = z.object({
-  client: z.string().transform(val => val === "" ? null : val).nullable().optional(),
-  port: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  clientId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  portId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   loadingDatetime: z.string().min(1, "Укажите дату и время загрузки").transform((val) => new Date(val)),
   loadingCity: z.string().min(1, "Укажите город загрузки"),
   loadingAddress: z.string().min(1, "Укажите адрес загрузки"),
@@ -29,9 +29,10 @@ const orderSchema = z.object({
   vehicleId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   carrier: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   clientRate: z.number().nullable().optional(),
+  clientRateVat: z.string().default("NO_VAT"),
   carrierRate: z.number().nullable().optional(),
-  carrierPaymentDueDate: z.string().transform(val => parseDate(val)).nullable().optional(),
-  deliveryDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  carrierRateVat: z.string().default("NO_VAT"),
+  carrierPaymentDays: z.number().int().nullable().optional(),
   emptyContainerReturnDate: z.string().transform(val => parseDate(val)).nullable().optional(),
   documentSubmissionDate: z.string().transform(val => parseDate(val)).nullable().optional(),
   notes: z.string().transform(val => val === "" ? null : val).nullable().optional(),
@@ -95,7 +96,6 @@ export async function GET(request: NextRequest) {
       where.OR = [
         { orderNumber: { contains: search } },
         { containerNumber: { contains: search } },
-        { client: { contains: search } },
         { loadingCity: { contains: search } },
         { unloadingCity: { contains: search } },
       ];
@@ -116,6 +116,8 @@ export async function GET(request: NextRequest) {
     const orders = await db.order.findMany({
       where,
       include: {
+        client: true,
+        port: true,
         containerType: true,
         driver: true,
         vehicle: true,
@@ -146,13 +148,14 @@ export async function GET(request: NextRequest) {
         "Примечания",
         "Номер заявки",
         "Маршрут",
-        "Дата доставки",
         "Водитель",
         "Телефон",
         "Перевозчик",
         "Ставка клиента",
+        "НДС клиента",
         "Ставка перевозчика",
-        "Срок оплаты",
+        "НДС перевозчика",
+        "Срок оплаты (дней)",
         "Дата сдачи порожнего",
         "Дата сдачи документов",
       ];
@@ -164,24 +167,34 @@ export async function GET(request: NextRequest) {
         CANCELLED: "Отменена",
       };
 
-      const rows = orders.map((order) => [
-        order.client || "",
-        order.port || "",
+      const vatMap: Record<string, string> = {
+        NO_VAT: "без НДС",
+        VAT_0: "НДС 0%",
+        VAT_5: "НДС 5%",
+        VAT_7: "НДС 7%",
+        VAT_10: "НДС 10%",
+        VAT_22: "НДС 22%",
+      };
+
+      const rows = orders.map((order: any) => [
+        order.client?.name || "",
+        order.port?.name || "",
         order.containerNumber,
-        order.containerType.name,
+        order.containerType?.name || "",
         order.cargoWeight.toString(),
         order.loadingDatetime.toLocaleString("ru-RU"),
         statusMap[order.status] || order.status,
         order.notes || "",
         order.orderNumber,
         `${order.loadingCity} → ${order.unloadingCity}`,
-        order.deliveryDate ? new Date(order.deliveryDate).toLocaleDateString("ru-RU") : "",
         order.driver?.fullName || "",
         order.driver?.phone || "",
         order.carrier || "",
         order.clientRate?.toString() || "",
+        vatMap[order.clientRateVat] || "",
         order.carrierRate?.toString() || "",
-        order.carrierPaymentDueDate ? new Date(order.carrierPaymentDueDate).toLocaleDateString("ru-RU") : "",
+        vatMap[order.carrierRateVat] || "",
+        order.carrierPaymentDays?.toString() || "",
         order.emptyContainerReturnDate ? new Date(order.emptyContainerReturnDate).toLocaleDateString("ru-RU") : "",
         order.documentSubmissionDate ? new Date(order.documentSubmissionDate).toLocaleDateString("ru-RU") : "",
       ]);
@@ -244,8 +257,8 @@ export async function POST(request: NextRequest) {
 
     const orderData = {
       orderNumber,
-      client: data.client,
-      port: data.port,
+      clientId: data.clientId,
+      portId: data.portId,
       loadingDatetime: data.loadingDatetime,
       loadingCity: data.loadingCity,
       loadingAddress: data.loadingAddress,
@@ -260,9 +273,10 @@ export async function POST(request: NextRequest) {
       vehicleId: data.vehicleId,
       carrier: data.carrier,
       clientRate: data.clientRate,
+      clientRateVat: data.clientRateVat,
       carrierRate: data.carrierRate,
-      carrierPaymentDueDate: data.carrierPaymentDueDate,
-      deliveryDate: data.deliveryDate,
+      carrierRateVat: data.carrierRateVat,
+      carrierPaymentDays: data.carrierPaymentDays,
       emptyContainerReturnDate: data.emptyContainerReturnDate,
       documentSubmissionDate: data.documentSubmissionDate,
       notes: data.notes,
@@ -273,6 +287,8 @@ export async function POST(request: NextRequest) {
     const order = await db.order.create({
       data: orderData,
       include: {
+        client: true,
+        port: true,
         containerType: true,
         driver: true,
         vehicle: true,
