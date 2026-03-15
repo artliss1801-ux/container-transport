@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { TOTP } from "otplib";
 import QRCode from "qrcode";
 import { db } from "@/lib/db";

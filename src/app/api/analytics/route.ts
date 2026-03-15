@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 
@@ -12,9 +12,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Не авторизован" }, { status: 401 });
     }
 
-    // Build where clause for manager
+    // Менеджер по логистике видит только свои заявки
     const where: any = {};
-    if (session.user.role === "MANAGER") {
+    if (session.user.role === "LOGISTICS_MANAGER") {
       where.userId = session.user.id;
     }
 

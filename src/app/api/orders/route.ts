@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import { getServerSession } from "next-auth/next";
 import { db } from "@/lib/db";
 import { authOptions } from "@/lib/auth";
 import { z } from "zod";
@@ -71,7 +71,8 @@ export async function GET(request: NextRequest) {
 
     const where: any = {};
 
-    if (session.user.role === "MANAGER") {
+    // Менеджер по логистике видит только свои заявки
+    if (session.user.role === "LOGISTICS_MANAGER") {
       where.userId = session.user.id;
     }
 
