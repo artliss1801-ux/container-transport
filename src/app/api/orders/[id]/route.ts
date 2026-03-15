@@ -12,8 +12,8 @@ const parseDate = (val: string | null | undefined): Date | null => {
 };
 
 const orderUpdateSchema = z.object({
-  client: z.string().transform(val => val === "" ? null : val).nullable().optional(),
-  port: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  clientId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
+  portId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   loadingDatetime: z.string().min(1, "Укажите дату и время загрузки").transform((val) => new Date(val)),
   loadingCity: z.string().min(1, "Укажите город загрузки"),
   loadingAddress: z.string().min(1, "Укажите адрес загрузки"),
@@ -28,9 +28,10 @@ const orderUpdateSchema = z.object({
   vehicleId: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   carrier: z.string().transform(val => val === "" ? null : val).nullable().optional(),
   clientRate: z.number().nullable().optional(),
+  clientRateVat: z.string().default("NO_VAT"),
   carrierRate: z.number().nullable().optional(),
-  carrierPaymentDueDate: z.string().transform(val => parseDate(val)).nullable().optional(),
-  deliveryDate: z.string().transform(val => parseDate(val)).nullable().optional(),
+  carrierRateVat: z.string().default("NO_VAT"),
+  carrierPaymentDays: z.number().int().nullable().optional(),
   emptyContainerReturnDate: z.string().transform(val => parseDate(val)).nullable().optional(),
   documentSubmissionDate: z.string().transform(val => parseDate(val)).nullable().optional(),
   notes: z.string().transform(val => val === "" ? null : val).nullable().optional(),
@@ -53,6 +54,8 @@ export async function GET(
     const order = await db.order.findUnique({
       where: { id },
       include: {
+        client: true,
+        port: true,
         containerType: true,
         driver: true,
         vehicle: true,
@@ -107,8 +110,8 @@ export async function PUT(
     const order = await db.order.update({
       where: { id },
       data: {
-        client: data.client,
-        port: data.port,
+        clientId: data.clientId,
+        portId: data.portId,
         loadingDatetime: data.loadingDatetime,
         loadingCity: data.loadingCity,
         loadingAddress: data.loadingAddress,
@@ -123,14 +126,17 @@ export async function PUT(
         vehicleId: data.vehicleId,
         carrier: data.carrier,
         clientRate: data.clientRate,
+        clientRateVat: data.clientRateVat,
         carrierRate: data.carrierRate,
-        carrierPaymentDueDate: data.carrierPaymentDueDate,
-        deliveryDate: data.deliveryDate,
+        carrierRateVat: data.carrierRateVat,
+        carrierPaymentDays: data.carrierPaymentDays,
         emptyContainerReturnDate: data.emptyContainerReturnDate,
         documentSubmissionDate: data.documentSubmissionDate,
         notes: data.notes,
       },
       include: {
+        client: true,
+        port: true,
         containerType: true,
         driver: true,
         vehicle: true,

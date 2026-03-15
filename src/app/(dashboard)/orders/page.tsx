@@ -51,6 +51,22 @@ const statusMap: Record<string, { label: string; variant: "default" | "secondary
   CANCELLED: { label: "Отменена", variant: "destructive" },
 };
 
+const vatOptions = {
+  client: [
+    { value: "NO_VAT", label: "без НДС" },
+    { value: "VAT_0", label: "НДС 0%" },
+    { value: "VAT_22", label: "НДС 22%" },
+  ],
+  carrier: [
+    { value: "NO_VAT", label: "без НДС" },
+    { value: "VAT_0", label: "НДС 0%" },
+    { value: "VAT_5", label: "НДС 5%" },
+    { value: "VAT_7", label: "НДС 7%" },
+    { value: "VAT_10", label: "НДС 10%" },
+    { value: "VAT_22", label: "НДС 22%" },
+  ],
+};
+
 // Определение столбцов таблицы
 const ALL_COLUMNS = [
   { id: "client", label: "Клиент", defaultWidth: 150 },
@@ -63,13 +79,12 @@ const ALL_COLUMNS = [
   { id: "notes", label: "Примечания", defaultWidth: 200 },
   { id: "orderNumber", label: "Заявка", defaultWidth: 130 },
   { id: "route", label: "Маршрут", defaultWidth: 180 },
-  { id: "deliveryDate", label: "Дата доставки", defaultWidth: 120 },
   { id: "driver", label: "Водитель", defaultWidth: 150 },
   { id: "driverPhone", label: "Телефон", defaultWidth: 120 },
   { id: "carrier", label: "Перевозчик", defaultWidth: 150 },
-  { id: "clientRate", label: "Ставка клиента", defaultWidth: 120 },
-  { id: "carrierRate", label: "Ставка перевозчика", defaultWidth: 140 },
-  { id: "carrierPaymentDueDate", label: "Срок оплаты", defaultWidth: 120 },
+  { id: "clientRate", label: "Ставка клиента", defaultWidth: 140 },
+  { id: "carrierRate", label: "Ставка перевозчика", defaultWidth: 150 },
+  { id: "carrierPaymentDays", label: "Срок оплаты", defaultWidth: 100 },
   { id: "emptyContainerReturnDate", label: "Сдача порожнего", defaultWidth: 130 },
   { id: "documentSubmissionDate", label: "Сдача документов", defaultWidth: 130 },
 ] as const;
@@ -77,8 +92,8 @@ const ALL_COLUMNS = [
 interface Order {
   id: string;
   orderNumber: string;
-  client: string | null;
-  port: string | null;
+  client: { id: string; name: string } | null;
+  port: { id: string; name: string } | null;
   loadingDatetime: string;
   loadingCity: string;
   loadingAddress: string;
@@ -93,9 +108,10 @@ interface Order {
   vehicle: { id: string; vehicleNumber: string; trailerNumber: string | null } | null;
   carrier: string | null;
   clientRate: number | null;
+  clientRateVat: string | null;
   carrierRate: number | null;
-  carrierPaymentDueDate: string | null;
-  deliveryDate: string | null;
+  carrierRateVat: string | null;
+  carrierPaymentDays: number | null;
   emptyContainerReturnDate: string | null;
   documentSubmissionDate: string | null;
   notes: string | null;
@@ -140,8 +156,8 @@ export default function OrdersPage() {
 
   // Form state
   const [formData, setFormData] = useState({
-    client: "",
-    port: "",
+    clientId: "",
+    portId: "",
     loadingDatetime: "",
     loadingCity: "",
     loadingAddress: "",
@@ -156,9 +172,10 @@ export default function OrdersPage() {
     vehicleId: "",
     carrier: "",
     clientRate: "",
+    clientRateVat: "NO_VAT",
     carrierRate: "",
-    carrierPaymentDueDate: "",
-    deliveryDate: "",
+    carrierRateVat: "NO_VAT",
+    carrierPaymentDays: "",
     emptyContainerReturnDate: "",
     documentSubmissionDate: "",
     notes: "",
@@ -177,6 +194,26 @@ export default function OrdersPage() {
 
       const response = await fetch(`/api/orders?${params}`);
       if (!response.ok) throw new Error("Failed to fetch orders");
+      return response.json();
+    },
+  });
+
+  // Fetch clients
+  const { data: clients } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const response = await fetch("/api/clients");
+      if (!response.ok) throw new Error("Failed to fetch clients");
+      return response.json();
+    },
+  });
+
+  // Fetch ports
+  const { data: ports } = useQuery({
+    queryKey: ["ports"],
+    queryFn: async () => {
+      const response = await fetch("/api/ports");
+      if (!response.ok) throw new Error("Failed to fetch ports");
       return response.json();
     },
   });
@@ -225,15 +262,18 @@ export default function OrdersPage() {
           cargoWeight: parseFloat(data.cargoWeight) || 0,
           clientRate: data.clientRate ? parseFloat(data.clientRate) : null,
           carrierRate: data.carrierRate ? parseFloat(data.carrierRate) : null,
+          carrierPaymentDays: data.carrierPaymentDays ? parseInt(data.carrierPaymentDays) : null,
           driverId: data.driverId || null,
           vehicleId: data.vehicleId || null,
+          clientId: data.clientId || null,
+          portId: data.portId || null,
           notes: data.notes || null,
         }),
       });
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Failed to save order");
+        throw new Error(error.error || error.detail || "Failed to save order");
       }
 
       return response.json();
@@ -317,8 +357,8 @@ export default function OrdersPage() {
 
   const resetForm = () => {
     setFormData({
-      client: "",
-      port: "",
+      clientId: "",
+      portId: "",
       loadingDatetime: "",
       loadingCity: "",
       loadingAddress: "",
@@ -333,9 +373,10 @@ export default function OrdersPage() {
       vehicleId: "",
       carrier: "",
       clientRate: "",
+      clientRateVat: "NO_VAT",
       carrierRate: "",
-      carrierPaymentDueDate: "",
-      deliveryDate: "",
+      carrierRateVat: "NO_VAT",
+      carrierPaymentDays: "",
       emptyContainerReturnDate: "",
       documentSubmissionDate: "",
       notes: "",
@@ -346,8 +387,8 @@ export default function OrdersPage() {
   const openEditDialog = (order: Order) => {
     setEditingOrder(order);
     setFormData({
-      client: order.client || "",
-      port: order.port || "",
+      clientId: order.client?.id || "",
+      portId: order.port?.id || "",
       loadingDatetime: new Date(order.loadingDatetime).toISOString().slice(0, 16),
       loadingCity: order.loadingCity,
       loadingAddress: order.loadingAddress,
@@ -362,9 +403,10 @@ export default function OrdersPage() {
       vehicleId: order.vehicle?.id || "",
       carrier: order.carrier || "",
       clientRate: order.clientRate?.toString() || "",
+      clientRateVat: order.clientRateVat || "NO_VAT",
       carrierRate: order.carrierRate?.toString() || "",
-      carrierPaymentDueDate: order.carrierPaymentDueDate ? order.carrierPaymentDueDate.slice(0, 10) : "",
-      deliveryDate: order.deliveryDate ? order.deliveryDate.slice(0, 10) : "",
+      carrierRateVat: order.carrierRateVat || "NO_VAT",
+      carrierPaymentDays: order.carrierPaymentDays?.toString() || "",
       emptyContainerReturnDate: order.emptyContainerReturnDate ? order.emptyContainerReturnDate.slice(0, 10) : "",
       documentSubmissionDate: order.documentSubmissionDate ? order.documentSubmissionDate.slice(0, 10) : "",
       notes: order.notes || "",
@@ -389,6 +431,11 @@ export default function OrdersPage() {
     return format(new Date(dateStr), "dd.MM.yyyy HH:mm", { locale: ru });
   };
 
+  const getVatLabel = (vat: string | null) => {
+    const item = [...vatOptions.client, ...vatOptions.carrier].find(v => v.value === vat);
+    return item?.label || "";
+  };
+
   const toggleColumn = (columnId: string) => {
     setVisibleColumns(prev => 
       prev.includes(columnId)
@@ -399,8 +446,8 @@ export default function OrdersPage() {
 
   const getCellValue = (order: Order, columnId: string) => {
     switch (columnId) {
-      case "client": return order.client || "-";
-      case "port": return order.port || "-";
+      case "client": return order.client?.name || "-";
+      case "port": return order.port?.name || "-";
       case "containerNumber": return order.containerNumber;
       case "containerType": return order.containerType?.name || "-";
       case "cargoWeight": return order.cargoWeight;
@@ -409,13 +456,12 @@ export default function OrdersPage() {
       case "notes": return order.notes || "-";
       case "orderNumber": return order.orderNumber;
       case "route": return `${order.loadingCity} → ${order.unloadingCity}`;
-      case "deliveryDate": return formatDate(order.deliveryDate);
       case "driver": return order.driver?.fullName || "-";
       case "driverPhone": return order.driver?.phone || "-";
       case "carrier": return order.carrier || "-";
-      case "clientRate": return order.clientRate ? `${order.clientRate} ₽` : "-";
-      case "carrierRate": return order.carrierRate ? `${order.carrierRate} ₽` : "-";
-      case "carrierPaymentDueDate": return formatDate(order.carrierPaymentDueDate);
+      case "clientRate": return order.clientRate ? `${order.clientRate} ₽ ${getVatLabel(order.clientRateVat)}` : "-";
+      case "carrierRate": return order.carrierRate ? `${order.carrierRate} ₽ ${getVatLabel(order.carrierRateVat)}` : "-";
+      case "carrierPaymentDays": return order.carrierPaymentDays ? `${order.carrierPaymentDays} дн.` : "-";
       case "emptyContainerReturnDate": return formatDate(order.emptyContainerReturnDate);
       case "documentSubmissionDate": return formatDate(order.documentSubmissionDate);
       default: return "-";
@@ -477,7 +523,7 @@ export default function OrdersPage() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="Поиск по номеру, клиенту, контейнеру..."
+                  placeholder="Поиск по номеру, контейнеру, городу..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-10"
@@ -658,19 +704,39 @@ export default function OrdersPage() {
                 {/* Клиент и Порт */}
                 <div>
                   <Label>Клиент</Label>
-                  <Input
-                    value={formData.client}
-                    onChange={(e) => setFormData({ ...formData, client: e.target.value })}
-                    placeholder="Наименование клиента"
-                  />
+                  <Select
+                    value={formData.clientId}
+                    onValueChange={(value) => setFormData({ ...formData, clientId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите клиента" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients?.map((c: any) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <Label>Порт</Label>
-                  <Input
-                    value={formData.port}
-                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                    placeholder="Порт"
-                  />
+                  <Select
+                    value={formData.portId}
+                    onValueChange={(value) => setFormData({ ...formData, portId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите порт" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ports?.map((p: any) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Дата и время загрузки */}
@@ -690,6 +756,7 @@ export default function OrdersPage() {
                   <Input
                     value={formData.loadingCity}
                     onChange={(e) => setFormData({ ...formData, loadingCity: e.target.value })}
+                    placeholder="Введите город"
                     required
                   />
                 </div>
@@ -698,6 +765,7 @@ export default function OrdersPage() {
                   <Input
                     value={formData.loadingAddress}
                     onChange={(e) => setFormData({ ...formData, loadingAddress: e.target.value })}
+                    placeholder="Адрес или ТТН"
                     required
                   />
                 </div>
@@ -718,6 +786,7 @@ export default function OrdersPage() {
                   <Input
                     value={formData.unloadingCity}
                     onChange={(e) => setFormData({ ...formData, unloadingCity: e.target.value })}
+                    placeholder="Введите город"
                     required
                   />
                 </div>
@@ -726,6 +795,7 @@ export default function OrdersPage() {
                   <Input
                     value={formData.unloadingAddress}
                     onChange={(e) => setFormData({ ...formData, unloadingAddress: e.target.value })}
+                    placeholder="Адрес или ТТН"
                     required
                   />
                 </div>
@@ -834,7 +904,7 @@ export default function OrdersPage() {
                   />
                 </div>
 
-                {/* Финансы */}
+                {/* Финансы - Ставка клиента */}
                 <div>
                   <Label>Ставка клиента (₽)</Label>
                   <Input
@@ -846,6 +916,26 @@ export default function OrdersPage() {
                   />
                 </div>
                 <div>
+                  <Label>НДС клиента</Label>
+                  <Select
+                    value={formData.clientRateVat}
+                    onValueChange={(value) => setFormData({ ...formData, clientRateVat: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vatOptions.client.map((v) => (
+                        <SelectItem key={v.value} value={v.value}>
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Финансы - Ставка перевозчика */}
+                <div>
                   <Label>Ставка перевозчика (₽)</Label>
                   <Input
                     type="number"
@@ -856,23 +946,36 @@ export default function OrdersPage() {
                   />
                 </div>
                 <div>
-                  <Label>Срок оплаты перевозчику</Label>
+                  <Label>НДС перевозчика</Label>
+                  <Select
+                    value={formData.carrierRateVat}
+                    onValueChange={(value) => setFormData({ ...formData, carrierRateVat: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {vatOptions.carrier.map((v) => (
+                        <SelectItem key={v.value} value={v.value}>
+                          {v.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Срок оплаты */}
+                <div>
+                  <Label>Срок оплаты перевозчику (банковских дней)</Label>
                   <Input
-                    type="date"
-                    value={formData.carrierPaymentDueDate}
-                    onChange={(e) => setFormData({ ...formData, carrierPaymentDueDate: e.target.value })}
+                    type="number"
+                    value={formData.carrierPaymentDays}
+                    onChange={(e) => setFormData({ ...formData, carrierPaymentDays: e.target.value })}
+                    placeholder="Количество дней"
                   />
                 </div>
 
                 {/* Даты */}
-                <div>
-                  <Label>Дата доставки</Label>
-                  <Input
-                    type="date"
-                    value={formData.deliveryDate}
-                    onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
-                  />
-                </div>
                 <div>
                   <Label>Дата сдачи порожнего контейнера</Label>
                   <Input
