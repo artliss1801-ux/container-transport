@@ -100,6 +100,20 @@ export const authOptions: NextAuthOptions = {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
         session.user.isTwoFactorEnabled = token.isTwoFactorEnabled as boolean;
+        
+        // Обновляем роль из базы данных для актуальности
+        try {
+          const user = await db.user.findUnique({
+            where: { id: token.id as string },
+            select: { role: true, isTwoFactorEnabled: true },
+          });
+          if (user) {
+            session.user.role = user.role;
+            session.user.isTwoFactorEnabled = user.isTwoFactorEnabled || false;
+          }
+        } catch (e) {
+          // Если ошибка, используем данные из токена
+        }
       }
       return session;
     },
