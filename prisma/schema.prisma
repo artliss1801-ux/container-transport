@@ -99,12 +99,17 @@ model Order {
   id                    String        @id @default(cuid())
   orderNumber           String        @unique  // Автоматически генерируемый номер
 
+  // Клиент и порт
+  client                String?       // Наименование клиента
+  port                  String?       // Порт
+
   // Место загрузки
   loadingDatetime       DateTime
   loadingCity           String
   loadingAddress        String
 
   // Место выгрузки
+  unloadingDatetime     DateTime?     // Дата и время выгрузки
   unloadingCity         String
   unloadingAddress      String
 
@@ -112,7 +117,7 @@ model Order {
   containerNumber       String
   containerTypeId       String
   containerType         ContainerType @relation(fields: [containerTypeId], references: [id])
-  cargoWeight           Float         // Вес в тоннах
+  cargoWeight           Float         // Вес в кг
 
   // Статус
   status                OrderStatus   @default(NEW)
@@ -122,6 +127,19 @@ model Order {
   driver                Driver?       @relation(fields: [driverId], references: [id])
   vehicleId             String?
   vehicle               Vehicle?      @relation(fields: [vehicleId], references: [id])
+
+  // Перевозчик
+  carrier               String?       // Наименование перевозчика
+
+  // Финансы
+  clientRate            Float?        // Ставка клиента
+  carrierRate           Float?        // Ставка перевозчика
+  carrierPaymentDueDate DateTime?     // Срок оплаты перевозчику
+
+  // Даты
+  deliveryDate          DateTime?     // Дата доставки
+  emptyContainerReturnDate DateTime?  // Дата сдачи порожнего контейнера
+  documentSubmissionDate  DateTime?   // Дата сдачи документов
 
   // Создатель заявки
   userId                String
