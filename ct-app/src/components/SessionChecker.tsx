@@ -5,7 +5,7 @@ import { useSession, signOut } from "./SessionProvider";
 import { logger } from "@/lib/logger";
 
 // How often to check session status (revoked, blocked, dismissed)
-const CHECK_INTERVAL_MS = 30_000; // 30 seconds
+const CHECK_INTERVAL_MS = 15_000; // 15 seconds
 
 // How long a user-activity flag stays "fresh" (we debounce DB writes)
 const ACTIVITY_WINDOW_MS = 60_000; // 1 minute
@@ -119,6 +119,10 @@ export function SessionChecker() {
     };
 
     checkSession();
+    // Сразу после монтирования отправляем active=true чтобы пользователь появился в "Онлайн" мгновенно
+    fetch(`/api/auth/check-session?active=true`, {
+      credentials: "include",
+    }).catch(() => {});
     intervalRef.current = setInterval(checkSession, CHECK_INTERVAL_MS);
 
     return () => {
