@@ -1,56 +1,78 @@
 #!/bin/bash
-# Deployment script for Production Calendar feature
-# Run this on the VPS or use it as a guide for manual deployment
+# Deploy Production Calendar feature to ContainerTrans
+# Run this script on the VPS: bash deploy-production-calendar.sh
+# Usage: bash deploy-production-calendar.sh [path-to-local-files]
+
 set -e
 
+CT_DIR="/home/ubuntuuser/ct-app"
+LOCAL_SRC="${1:-.}"
+
 echo "=== Deploying Production Calendar Feature ==="
+
+# 1. Create necessary directories
+echo "[1/6] Creating directories..."
+mkdir -p "$CT_DIR/src/app/api/production-calendar/sync-online"
+mkdir -p "$CT_DIR/src/components"
+
+# 2. Copy server-side library files
+echo "[2/6] Copying library files..."
+if [ -f "$LOCAL_SRC/src/lib/production-calendar.ts" ]; then
+  cp "$LOCAL_SRC/src/lib/production-calendar.ts" "$CT_DIR/src/lib/production-calendar.ts"
+  echo "  - production-calendar.ts"
+fi
+
+# 3. Copy API routes
+echo "[3/6] Copying API routes..."
+for f in route.ts; do
+  if [ -f "$LOCAL_SRC/src/app/api/production-calendar/$f" ]; then
+    cp "$LOCAL_SRC/src/app/api/production-calendar/$f" "$CT_DIR/src/app/api/production-calendar/$f"
+    echo "  - production-calendar/$f"
+  fi
+done
+
+for dir in batch days recalculate sync-online; do
+  if [ -f "$LOCAL_SRC/src/app/api/production-calendar/$dir/route.ts" ]; then
+    cp "$LOCAL_SRC/src/app/api/production-calendar/$dir/route.ts" "$CT_DIR/src/app/api/production-calendar/$dir/route.ts"
+    echo "  - production-calendar/$dir/route.ts"
+  fi
+done
+
+# 4. Copy UI component
+echo "[4/6] Copying UI component..."
+if [ -f "$LOCAL_SRC/src/components/ProductionCalendarTab.tsx" ]; then
+  cp "$LOCAL_SRC/src/components/ProductionCalendarTab.tsx" "$CT_DIR/src/components/ProductionCalendarTab.tsx"
+  echo "  - ProductionCalendarTab.tsx"
+fi
+
+# 5. Copy updated payment-calendar page
+echo "[5/6] Copying updated payment-calendar page..."
+if [ -f "$LOCAL_SRC/src/app/(dashboard)/payment-calendar/page.tsx" ]; then
+  cp "$LOCAL_SRC/src/app/(dashboard)/payment-calendar/page.tsx" "$CT_DIR/src/app/(dashboard)/payment-calendar/page.tsx"
+  echo "  - payment-calendar/page.tsx"
+fi
+
+# 6. Copy updated Prisma schema
+echo "[6/6] Copying Prisma schema..."
+if [ -f "$LOCAL_SRC/prisma/schema.prisma" ]; then
+  cp "$LOCAL_SRC/prisma/schema.prisma" "$CT_DIR/prisma/schema.prisma"
+  echo "  - schema.prisma"
+fi
+
 echo ""
+echo "=== Files deployed. Now rebuilding container... ==="
 
-APP_DIR="/home/ubuntuuser/ct-app"
+cd "$CT_DIR"
 
-# Step 1: Upload files (run from local machine)
-echo "[1/6] Files should already be uploaded to $APP_DIR"
+# Generate Prisma client
+echo "Running prisma generate..."
+docker exec ct-app npx prisma generate 2>&1 | tail -5
+
+# Rebuild and restart the container
+echo "Rebuilding container..."
+bash /home/ubuntuuser/deploy-ct.sh 2>&1 | tail -20
+
 echo ""
-
-# Step 2: Add ProductionCalendar model to Prisma schema
-echo "[2/6] Adding ProductionCalendar model to Prisma schema..."
-# This needs to be added to schema.prisma:
-# model ProductionCalendar {
-#   id          String   @id @default(cuid())
-#   date        DateTime @unique
-#   type        String   @default("HOLIDAY")
-#   title       String   @default("")
-#   isNonWorking Boolean @default(true)
-#   year        Int
-#   createdAt   DateTime @default(now())
-#   updatedAt   DateTime @updatedAt
-#
-#   @@map("ProductionCalendar")
-# }
-
-echo "  Please add the ProductionCalendar model to prisma/schema.prisma"
-echo ""
-
-# Step 3: Generate Prisma client
-echo "[3/6] Generating Prisma client..."
-cd $APP_DIR
-npx prisma generate 2>&1 | tail -3
-echo ""
-
-# Step 4: Mark migration as applied (table already created via SQL)
-echo "[4/6] Marking migration as applied..."
-npx prisma migrate resolve --applied 20260427000000_add_production_calendar 2>&1 || echo "  (Migration may already be marked)"
-echo ""
-
-# Step 5: Build and deploy
-echo "[5/6] Building and deploying..."
-bash $APP_DIR/deploy-ct.sh
-echo ""
-
-# Step 6: Recalculate all payment dates
-echo "[6/6] Recalculating payment dates..."
-echo "  Run this after deployment is complete:"
-echo "  curl -X POST https://artliss.mooo.com/api/production-calendar/recalculate -H 'Content-Type: application/json' -b 'your-auth-cookie'"
-echo ""
-
-echo "=== Done! ==="
+echo "=== Deployment complete! ==="
+echo "Check: https://195.209.208.114/payment-calendar"
+echo "Admin tab 'Производственный календарь' should be visible."

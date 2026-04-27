@@ -26,6 +26,12 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { countRussianWorkingDays, isRussianWorkingDay } from "@/lib/russian-calendar";
+import dynamic from "next/dynamic";
+
+const ProductionCalendarTab = dynamic(
+  () => import("@/components/ProductionCalendarTab"),
+  { ssr: false, loading: () => <div className="flex items-center justify-center py-16"><div className="animate-spin h-8 w-8 border-2 border-blue-500 border-t-transparent rounded-full" /></div> }
+);
 import {
   Select,
   SelectContent,
@@ -390,6 +396,7 @@ export default function PaymentCalendarPage() {
   const [columnDialogOpen, setColumnDialogOpen] = useState(false);
   const [pendingSettings, setPendingSettings] = useState<Partial<GlobalSettings> | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("payment");
   const [openDatePopoverId, setOpenDatePopoverId] = useState<string | null>(null);
   const [openDocDatePopoverId, setOpenDocDatePopoverId] = useState<string | null>(null);
   const [openReturnDatePopoverId, setOpenReturnDatePopoverId] = useState<string | null>(null);
@@ -1615,7 +1622,41 @@ export default function PaymentCalendarPage() {
 
   return (
     <div className="flex flex-col h-full">
-      <Header title="Платежный календарь" />
+      <Header title={activeTab === "production" ? "Производственный календарь" : "Платежный календарь"} />
+
+      {/* Tab buttons (admin only for production calendar tab) */}
+      {isAdmin && (
+        <div className="shrink-0 px-6 pt-3 flex items-center gap-1">
+          <button
+            onClick={() => setActiveTab("payment")}
+            className={cn(
+              "px-4 py-1.5 text-sm font-medium rounded-t-md border-b-2 transition-colors",
+              activeTab === "payment"
+                ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            Платежный календарь
+          </button>
+          <button
+            onClick={() => setActiveTab("production")}
+            className={cn(
+              "px-4 py-1.5 text-sm font-medium rounded-t-md border-b-2 transition-colors",
+              activeTab === "production"
+                ? "border-blue-600 text-blue-700 bg-blue-50/50"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+            )}
+          >
+            Производственный календарь
+          </button>
+        </div>
+      )}
+
+      {activeTab === "production" ? (
+        <main className="flex-1 overflow-auto p-6">
+          <ProductionCalendarTab />
+        </main>
+      ) : (
 
       <main className="flex-1 overflow-auto flex flex-col p-6 pb-0">
         {/* Закреплённая панель с карточками */}
@@ -1975,6 +2016,7 @@ export default function PaymentCalendarPage() {
           </CardContent>
         </Card>
       </main>
+      )}
 
       {/* === Диалог управления столбцами === */}
       <Dialog open={columnDialogOpen} onOpenChange={setColumnDialogOpen}>
