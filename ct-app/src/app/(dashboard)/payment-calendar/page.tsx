@@ -386,6 +386,8 @@ export default function PaymentCalendarPage() {
   const [dateType, setDateType] = useState<string>("expected"); // expected или actual
   const [carrierFilter, setCarrierFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Флаг: настройки фильтров загружены из БД (до загрузки не применяем дефолтные значения)
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
   const [cardsHeight, setCardsHeight] = useState<number>(DEFAULT_CARDS_HEIGHT);
   const [tableHeight, setTableHeight] = useState<number>(DEFAULT_TABLE_HEIGHT);
   const [headerHeight, setHeaderHeight] = useState<number>(DEFAULT_HEADER_HEIGHT);
@@ -421,6 +423,42 @@ export default function PaymentCalendarPage() {
     totalAmount: number;
   } | null>(null);
   const [pendingApprovalChecked, setPendingApprovalChecked] = useState(false);
+
+  // --- Загрузка сохранённых фильтров из БД ---
+  useEffect(() => {
+    if (!uid) return;
+    fetch('/api/user-page-preferences?page=payment-calendar', { credentials: 'include' })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.config) {
+          try {
+            const cfg = typeof data.config === 'string' ? JSON.parse(data.config) : data.config;
+            if (cfg.search !== undefined) setSearch(cfg.search);
+            if (cfg.branchFilter !== undefined) setBranchFilter(cfg.branchFilter);
+            if (cfg.paymentDate !== undefined) setPaymentDate(cfg.paymentDate);
+            if (cfg.dateType !== undefined) setDateType(cfg.dateType);
+            if (cfg.carrierFilter !== undefined) setCarrierFilter(cfg.carrierFilter);
+          } catch {}
+        }
+        setFiltersLoaded(true);
+      })
+      .catch(() => setFiltersLoaded(true));
+  }, [uid]);
+
+  // --- Автосохранение фильтров в БД (debounce 800ms) ---
+  useEffect(() => {
+    if (!filtersLoaded || !uid) return;
+    const timer = setTimeout(() => {
+      const config = JSON.stringify({ search, branchFilter, paymentDate, dateType, carrierFilter });
+      fetch('/api/user-page-preferences?page=payment-calendar', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ config }),
+      }).catch(() => {});
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [search, branchFilter, paymentDate, dateType, carrierFilter, filtersLoaded, uid]);
 
   // Читаем параметр approval из URL при монтировании и при изменении
   useEffect(() => {
@@ -726,7 +764,7 @@ export default function PaymentCalendarPage() {
       if (!response.ok) throw new Error("Failed to fetch payment calendar");
       return response.json();
     },
-    enabled: canViewOrders,
+    enabled: canViewOrders && filtersLoaded,
     staleTime: 30000,
     refetchInterval: 60000,
     refetchOnWindowFocus: false,
