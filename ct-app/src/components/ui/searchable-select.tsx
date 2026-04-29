@@ -1,0 +1,1 @@
+export function SearchableSelect({ value, onChange, options, ...props }: any) { return <select value={value} onChange={(e) => onChange?.(e.target.value)} {...props}>{options?.map((o: any) => <option key={o.value} value={o.value}>{o.label}</option>)}</select>; }
