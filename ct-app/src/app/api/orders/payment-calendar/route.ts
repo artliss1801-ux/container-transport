@@ -36,19 +36,46 @@ export async function GET(request: NextRequest) {
       status: "WAITING_PAYMENT",
     };
 
-    // Фильтр по поиску (номер заявки, контейнер, перевозчик, заказчик)
+    // Фильтр по поиску (номер заявки, контейнер, перевозчик, заказчик, доп. перевозчики из расходов)
     if (search) {
       where.OR = [
         { orderNumber: { contains: search, mode: "insensitive" } },
         { containerNumber: { contains: search, mode: "insensitive" } },
         { carrier: { name: { contains: search, mode: "insensitive" } } },
         { client: { name: { contains: search, mode: "insensitive" } } },
+        {
+          expenses: {
+            some: {
+              expenseType: "CARRIER",
+              contractor: {
+                name: { contains: search, mode: "insensitive" },
+                type: { in: ["CARRIER", "CLIENT_CARRIER"] }
+              }
+            }
+          }
+        }
       ];
     }
 
-    // Фильтр по перевозчику
+    // Фильтр по перевозчику (основной перевозчик ИЛИ доп. перевозчик из расходов)
     if (carrierId) {
-      where.carrierId = carrierId;
+      where.AND = where.AND || [];
+      where.AND.push({
+        OR: [
+          { carrierId: carrierId },
+          {
+            expenses: {
+              some: {
+                expenseType: "CARRIER",
+                contractorId: carrierId,
+                contractor: {
+                  type: { in: ["CARRIER", "CLIENT_CARRIER"] }
+                }
+              }
+            }
+          }
+        ]
+      });
     }
 
     // Фильтр по дате оплаты (выбираем поле в зависимости от dateType)
@@ -158,6 +185,10 @@ export async function GET(request: NextRequest) {
             contractorId: true,
             expenseType: true,
             amount: true,
+            description: true,
+            contractor: {
+              select: { id: true, name: true, type: true }
+            },
           },
         },
       },
@@ -278,7 +309,81 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ orders });
+    // --- Создаём виртуальные строки для дополнительных перевозчиков из расходов ---
+    // Для каждой заявки, если в расходах есть CARRIER-расходы с contractorId,
+    // отличным от основного перевозчика заявки, и типом контрагента CARRIER/CLIENT_CARRIER
+    // (НЕ CONTRACTOR), создаём отдельную строку в платежном календаре
+    const additionalCarrierRows: any[] = [];
+    for (const order of orders) {
+      const mainCarrierId = order.carrier?.id;
+
+      for (const exp of (order.expenses || [])) {
+        if (exp.expenseType !== "CARRIER") continue;
+        if (!exp.contractorId) continue;
+        // Пропускаем расходы, где контрагент = основной перевозчик заявки
+        // (они уже учтены в calcTotalToPay основной строки)
+        if (exp.contractorId === mainCarrierId) continue;
+
+        const contractor = exp.contractor;
+        if (!contractor) continue;
+        // Только перевозчики (CARRIER, CLIENT_CARRIER), не контрагенты (CONTRACTOR)
+        if (contractor.type === "CONTRACTOR") continue;
+
+        additionalCarrierRows.push({
+          id: `expense-${exp.id}`,
+          orderNumber: order.orderNumber,
+          containerNumber: order.containerNumber,
+          containerType: order.containerType,
+          cargoWeight: order.cargoWeight,
+          cargoName: order.cargoName,
+          loadingCity: order.loadingCity,
+          loadingAddress: order.loadingAddress,
+          loadingDatetime: order.loadingDatetime,
+          unloadingCity: order.unloadingCity,
+          unloadingAddress: order.unloadingAddress,
+          unloadingDatetime: order.unloadingDatetime,
+          clientRate: order.clientRate,
+          clientRateVat: order.clientRateVat,
+          carrierRate: exp.amount, // ставка = сумма расхода
+          carrierRateVat: null,
+          carrierPaymentDays: null,
+          carrierActualPaymentDays: null,
+          carrierPrepayment: null,
+          carrierPrepaymentDate: null,
+          carrierOffset: null,
+          carrierOffsetAmount: null,
+          carrierExpectedPaymentDate: order.carrierExpectedPaymentDate,
+          carrierActualPaymentDate: order.carrierActualPaymentDate,
+          clientExpectedPaymentDate: order.clientExpectedPaymentDate,
+          clientActualPaymentDate: order.clientActualPaymentDate,
+          documentSubmissionDate: order.documentSubmissionDate,
+          emptyContainerReturnDate: order.emptyContainerReturnDate,
+          createdAt: order.createdAt,
+          notes: exp.description || null, // описание расхода как примечание
+          paymentIssueType: null,
+          paymentIssueStatus: null,
+          paymentIssueComment: null,
+          paymentIssueResolution: null,
+          paymentIssueManagerComment: null,
+          routePoints: order.routePoints,
+          carrier: { id: contractor.id, name: contractor.name, isBlocked: false },
+          client: order.client,
+          assignedManager: order.assignedManager,
+          driver: order.driver,
+          truck: order.truck,
+          branch: order.branch,
+          expenses: [], // без подрасходов
+          isAdditionalCarrier: true,
+          expenseId: exp.id,
+          parentOrderId: order.id,
+        });
+      }
+    }
+
+    // Объединяем: основные заявки + доп. перевозчики
+    const allResults = [...orders, ...additionalCarrierRows];
+
+    return NextResponse.json({ orders: allResults });
   } catch (error: any) {
     console.error("[payment-calendar] Error:", error);
     return NextResponse.json(

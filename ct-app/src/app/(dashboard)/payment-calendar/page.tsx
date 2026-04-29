@@ -92,7 +92,11 @@ interface PaymentOrder {
   driver: { id: string; fullName: string } | null;
   truck: { id: string; vehicleNumber: string } | null;
   branch: { id: string; name: string; documentGraceDays: number | null } | null;
-  expenses: { id: string; contractorId: string | null; expenseType: string; amount: number }[];
+  expenses: { id: string; contractorId: string | null; expenseType: string; amount: number; description?: string | null; contractor?: { id: string; name: string; type: string } | null }[];
+  // Виртуальные строки для доп. перевозчиков из расходов
+  isAdditionalCarrier?: boolean;
+  expenseId?: string;
+  parentOrderId?: string;
 }
 
 interface ColumnDef {
@@ -205,6 +209,10 @@ function getPaymentIssueValue(order: PaymentOrder): string {
 // РП = ставка перевозчика + доп.расходы по перевозчику (где contractorId совпадает с carrierId заявки)
 // К оплате = РП - взаимозачёт - предоплата
 function calcTotalToPay(order: PaymentOrder): number {
+  // Для виртуальной строки доп. перевозчика: сумма = ставка (из расхода)
+  if (order.isAdditionalCarrier) {
+    return order.carrierRate || 0;
+  }
   const carrierRate = order.carrierRate || 0;
   const carrierId = order.carrier?.id;
 
@@ -873,9 +881,11 @@ export default function PaymentCalendarPage() {
     });
   }, []);
   const toggleSelectAll = useCallback(() => {
+    // Выбираем только основные заявки (не виртуальные строки доп. перевозчиков)
+    const realOrders = orders.filter(o => !o.isAdditionalCarrier);
     setSelectedIds(prev => {
-      if (prev.size === orders.length) return new Set();
-      return new Set(orders.map(o => o.id));
+      if (prev.size === realOrders.length) return new Set();
+      return new Set(realOrders.map(o => o.id));
     });
   }, [orders]);
   const clearSelection = useCallback(() => {
@@ -886,11 +896,15 @@ export default function PaymentCalendarPage() {
   const selectedTotal = useMemo(() => {
     return selectedOrders.reduce((s, o) => s + calcTotalToPay(o), 0);
   }, [selectedOrders]);
-  const allSelected = orders.length > 0 && selectedIds.size === orders.length;
+  // allSelected: только для основных заявок (виртуальные строки не считаются)
+  const realOrders = useMemo(() => orders.filter(o => !o.isAdditionalCarrier), [orders]);
+  const allSelected = realOrders.length > 0 && realOrders.every(o => selectedIds.has(o.id));
 
   // --- Открытие заявки для редактирования ---
-  const openOrder = useCallback((id: string) => {
-    router.push(`/orders?edit=${id}&from=payment-calendar`);
+  const openOrder = useCallback((id: string, order?: PaymentOrder) => {
+    // Для виртуальной строки доп. перевозчика — открываем родительскую заявку
+    const targetId = order?.isAdditionalCarrier ? order.parentOrderId || id.replace('expense-', '') : id;
+    router.push(`/orders?edit=${targetId}&from=payment-calendar`);
   }, [router]);
 
   // --- Сохранение фактической даты оплаты напрямую ---
@@ -999,6 +1013,10 @@ export default function PaymentCalendarPage() {
   const approveSelectedOrders = useCallback(async () => {
     if (selectedIds.size === 0) return;
     
+    // Фильтруем: только реальные orderId (без виртуальных expense-...)
+    const realOrderIds = Array.from(selectedIds).filter(id => !id.startsWith('expense-'));
+    if (realOrderIds.length === 0) return;
+    
     setIsApproving(true);
     try {
       const response = await fetch("/api/orders/payment-calendar", {
@@ -1006,7 +1024,7 @@ export default function PaymentCalendarPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          orderIds: Array.from(selectedIds),
+          orderIds: realOrderIds,
         }),
       });
       
@@ -1055,6 +1073,9 @@ export default function PaymentCalendarPage() {
 
   const rejectSelectedOrders = useCallback(async () => {
     if (selectedIds.size === 0) return;
+    // Фильтруем: только реальные orderId
+    const realOrderIds = Array.from(selectedIds).filter(id => !id.startsWith('expense-'));
+    if (realOrderIds.length === 0) return;
     setIsRejecting(true);
     try {
       // Обновляем статус запроса на согласование
@@ -1090,6 +1111,9 @@ export default function PaymentCalendarPage() {
   
   const sendForApproval = useCallback(async () => {
     if (selectedIds.size === 0) return;
+    // Фильтруем: только реальные orderId
+    const realOrderIds = Array.from(selectedIds).filter(id => !id.startsWith('expense-'));
+    if (realOrderIds.length === 0) return;
     
     setIsSendingForApproval(true);
     try {
@@ -1098,7 +1122,7 @@ export default function PaymentCalendarPage() {
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          orderIds: Array.from(selectedIds),
+          orderIds: realOrderIds,
         }),
       });
       
@@ -1245,6 +1269,15 @@ export default function PaymentCalendarPage() {
   const renderCell = (order: PaymentOrder, col: ColumnDef) => {
     switch (col.key) {
       case "status": {
+        // Для виртуальных строк доп. перевозчиков — простой статус по дате
+        if (order.isAdditionalCarrier) {
+          const st = getPaymentStatus(order.carrierExpectedPaymentDate);
+          return (
+            <div className="flex items-center gap-1">
+              <span className={cn("text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap", st.color)}>{st.label}</span>
+            </div>
+          );
+        }
         // Если проблема с документами
         if (order.paymentIssueType === "DOCUMENT_ISSUE") {
           const resConf = order.paymentIssueResolution && RESOLUTION_CONFIG[order.paymentIssueResolution];
@@ -1262,6 +1295,10 @@ export default function PaymentCalendarPage() {
         return <span className={cn("text-xs px-2 py-1 rounded-full font-medium whitespace-nowrap", st.color)}>{st.label}</span>;
       }
       case "paymentStatus": {
+        // Для виртуальных строк доп. перевозчиков — нет статуса проблемы
+        if (order.isAdditionalCarrier) {
+          return <span className="text-xs text-gray-400">—</span>;
+        }
         // Только админ может менять статус
         if (!isAdmin) {
           // Только отображение для не-админов
@@ -1371,6 +1408,9 @@ export default function PaymentCalendarPage() {
             "text-sm whitespace-nowrap max-w-[180px] truncate block",
             order.carrier?.isBlocked ? "text-red-600" : "text-gray-600"
           )}>
+            {order.isAdditionalCarrier && (
+              <span className="inline-flex items-center ml-0 mr-1 px-1.5 py-0 rounded text-[10px] font-medium bg-blue-100 text-blue-700 align-middle" title="Дополнительный перевозчик из расходов">доп.</span>
+            )}
             {order.carrier?.name || "—"}
             {order.carrier?.isBlocked && <span className="ml-1 text-xs">(заблокирован)</span>}
           </span>
@@ -1417,6 +1457,10 @@ export default function PaymentCalendarPage() {
       case "clientExpectedPaymentDate":
         return <span className="text-sm text-gray-600 whitespace-nowrap">{formatDate(order.clientExpectedPaymentDate)}</span>;
       case "carrierActualPaymentDate":
+        // Для виртуальных строк доп. перевозчиков — только отображение даты
+        if (order.isAdditionalCarrier) {
+          return <span className="text-sm text-gray-600 whitespace-nowrap">{formatDate(order.carrierActualPaymentDate)}</span>;
+        }
         // Popover с календарём для выбора даты
         return (
           <Popover open={openDatePopoverId === order.id} onOpenChange={(open) => setOpenDatePopoverId(open ? order.id : null)}>
@@ -1457,7 +1501,7 @@ export default function PaymentCalendarPage() {
           </Popover>
         );
       case "documentSubmissionDate":
-        if (isAdmin) {
+        if (isAdmin && !order.isAdditionalCarrier) {
           return (
             <Popover open={openDocDatePopoverId === order.id} onOpenChange={(open) => setOpenDocDatePopoverId(open ? order.id : null)}>
               <PopoverTrigger asChild>
@@ -1484,7 +1528,7 @@ export default function PaymentCalendarPage() {
         }
         return <span className="text-sm text-gray-600 whitespace-nowrap">{formatDate(order.documentSubmissionDate)}</span>;
       case "emptyContainerReturnDate":
-        if (isAdmin) {
+        if (isAdmin && !order.isAdditionalCarrier) {
           return (
             <Popover open={openReturnDatePopoverId === order.id} onOpenChange={(open) => setOpenReturnDatePopoverId(open ? order.id : null)}>
               <PopoverTrigger asChild>
@@ -1511,6 +1555,9 @@ export default function PaymentCalendarPage() {
         }
         return <span className="text-sm text-gray-600 whitespace-nowrap">{formatDate(order.emptyContainerReturnDate)}</span>;
       case "paymentDays":
+        if (order.isAdditionalCarrier) {
+          return <span className="text-sm text-gray-400">—</span>;
+        }
         if (isAdmin && editingPaymentDaysId === order.id) {
           return (
             <Popover open={true} onOpenChange={(open) => { if (!open) setEditingPaymentDaysId(null); }}>
@@ -1562,6 +1609,9 @@ export default function PaymentCalendarPage() {
           </span>
         );
       case "actualPaymentDays": {
+        if (order.isAdditionalCarrier) {
+          return <span className="text-sm text-gray-400">—</span>;
+        }
         const baseDays = order.carrierPaymentDays;
         const returnDate = order.emptyContainerReturnDate;
         const docDate = order.documentSubmissionDate;
@@ -1584,6 +1634,10 @@ export default function PaymentCalendarPage() {
       case "notes":
         return <span className="text-sm text-gray-500 max-w-[200px] truncate block">{order.notes || "—"}</span>;
       case "select":
+        // Для виртуальных строк доп. перевозчиков — нельзя выбирать
+        if (order.isAdditionalCarrier) {
+          return <span className="text-xs text-gray-300">—</span>;
+        }
         return (
           <Checkbox
             checked={selectedIds.has(order.id)}
@@ -1593,7 +1647,7 @@ export default function PaymentCalendarPage() {
         );
       case "link":
         return (
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openOrder(order.id)} title="Открыть заявку">
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => openOrder(order.id, order)} title={order.isAdditionalCarrier ? "Открыть заявку" : "Открыть заявку"}>
             <FileText className="w-4 h-4 text-blue-500" />
           </Button>
         );
@@ -1897,6 +1951,7 @@ export default function PaymentCalendarPage() {
                       const status = getPaymentStatus(order.carrierExpectedPaymentDate);
                       const isSelected = selectedIds.has(order.id);
                       const hasDocumentIssue = order.paymentIssueType === "DOCUMENT_ISSUE";
+                      const isAdditional = !!order.isAdditionalCarrier;
                       return (
                         <tr
                           key={order.id}
@@ -1904,9 +1959,11 @@ export default function PaymentCalendarPage() {
                           className={cn(
                             "hover:bg-gray-50 transition-colors",
                             isSelected && "bg-blue-50/60",
+                            // Виртуальная строка доп. перевозчика — голубой фон
+                            isAdditional && !isSelected && "bg-blue-50/40 border-l-2 border-l-blue-400",
                             hasDocumentIssue && !isSelected && "bg-red-100",
-                            !hasDocumentIssue && status.type === "overdue" && !isSelected && "bg-red-50/50",
-                            !hasDocumentIssue && status.type === "today" && !isSelected && "bg-amber-50/50"
+                            !hasDocumentIssue && !isAdditional && status.type === "overdue" && !isSelected && "bg-red-50/50",
+                            !hasDocumentIssue && !isAdditional && status.type === "today" && !isSelected && "bg-amber-50/50"
                           )}
                         >
                           {activeColumns.map((col, idx) => (
